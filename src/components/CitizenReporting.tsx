@@ -5,10 +5,18 @@ import { type Language, translations } from '@/lib/translations';
 import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useToast } from '@/hooks/use-toast';
+import {
+  isIncidentType,
+  submitIncident,
+  type IncidentClientLike,
+  type IncidentType,
+} from '@/integrations/supabase/incidents';
 
 interface CitizenReportingProps {
   language: Language;
   userId?: string;
+  /** Injectable for tests. */
+  client?: IncidentClientLike;
 }
 
 const reportLabels: Record<Language, {
@@ -46,21 +54,22 @@ const reportLabels: Record<Language, {
   },
 };
 
-const incidentTypes = [
-  { id: 'flooding' as const, icon: Waves, color: 'text-primary' },
-  { id: 'high_waves' as const, icon: Waves, color: 'text-warning' },
-  { id: 'blocked_roads' as const, icon: Construction, color: 'text-danger' },
-  { id: 'other' as const, icon: FileWarning, color: 'text-muted-foreground' },
+const incidentTypes: { id: IncidentType; icon: typeof Waves; color: string }[] = [
+  { id: 'flooding', icon: Waves, color: 'text-primary' },
+  { id: 'high_waves', icon: Waves, color: 'text-warning' },
+  { id: 'blocked_roads', icon: Construction, color: 'text-danger' },
+  { id: 'other', icon: FileWarning, color: 'text-muted-foreground' },
 ];
 
-export function CitizenReporting({ language, userId }: CitizenReportingProps) {
+export function CitizenReporting({ language, userId, client }: CitizenReportingProps) {
   const rl = reportLabels[language];
   const [showForm, setShowForm] = useState(false);
-  const [type, setType] = useState<string>('');
+  const [type, setType] = useState<IncidentType | ''>('');
   const [description, setDescription] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const { position } = useGeolocation();
   const { toast } = useToast();
 
@@ -68,54 +77,58 @@ export function CitizenReporting({ language, userId }: CitizenReportingProps) {
     flooding: rl.flooding, high_waves: rl.highWaves, blocked_roads: rl.blockedRoads, other: rl.other,
   };
 
+  const resetForm = () => {
+    setShowForm(false);
+    setSubmitted(false);
+    setType('');
+    setDescription('');
+    setPhoto(null);
+    setFormError(null);
+  };
+
   const handleSubmit = async () => {
-    if (!type || !description.trim() || !userId) return;
+    // Guard the invariants the database also enforces, so an invalid value is
+    // never sent and never reported as a success.
+    if (!userId || !isIncidentType(type) || !description.trim()) return;
+
     setSubmitting(true);
+    setFormError(null);
 
-    try {
-      let photoUrl: string | null = null;
+    const activeClient = client ?? (supabase as unknown as IncidentClientLike);
 
-      if (photo) {
-        const ext = photo.name.split('.').pop();
-        // Path convention is relied on by the storage RLS policies: the
-        // first segment is the uploader's auth user id.
-        const path = `${userId}/${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage
-          .from('incident-photos')
-          .upload(path, photo);
-        if (!uploadErr) {
-          // The bucket is private, so a public URL would not resolve.
-          // Store the object path; resolve it with createSignedUrl() at read
-          // time, scoped by the same owner-or-responder policy.
-          photoUrl = path;
-        }
-      }
-
-      const { error } = await supabase.from('incident_reports').insert({
-        user_id: userId,
-        type: type as any,
+    const result = await submitIncident(
+      { client: activeClient },
+      {
+        reporterId: userId,
+        type,
         description: description.trim(),
-        photo_url: photoUrl,
         latitude: position?.latitude ?? null,
         longitude: position?.longitude ?? null,
-      });
+        photo,
+      }
+    );
 
-      if (error) throw error;
+    setSubmitting(false);
 
-      setSubmitted(true);
-      toast({ title: '✅', description: rl.success });
-      setTimeout(() => {
-        setShowForm(false);
-        setSubmitted(false);
-        setType('');
-        setDescription('');
-        setPhoto(null);
-      }, 2000);
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Error', description: err.message });
-    } finally {
-      setSubmitting(false);
+    if (!result.ok) {
+      // Show the database's own message. Never a generic "something went wrong".
+      const message = result.error?.message ?? 'The report could not be submitted.';
+      setFormError(message);
+      toast({ variant: 'destructive', title: 'Error', description: message });
+      return;
     }
+
+    // Success means the INSERT resolved. A photo failure is reported
+    // separately rather than being presented as a fully successful report.
+    if (result.photoWarning) {
+      toast({ variant: 'destructive', title: 'Error', description: result.photoWarning });
+      setFormError(result.photoWarning);
+      return;
+    }
+
+    setSubmitted(true);
+    toast({ title: '✅', description: rl.success });
+    setTimeout(resetForm, 2000);
   };
 
   return (
@@ -200,18 +213,29 @@ export function CitizenReporting({ language, userId }: CitizenReportingProps) {
                     {photo && <span className="text-xs text-muted-foreground">{photo.name}</span>}
                   </div>
 
+                  {/* Surface the real failure reason inline, not just in a toast. */}
+                  {formError && (
+                    <p
+                      className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-3 py-2"
+                      role="alert"
+                      data-testid="citizen-report-error"
+                    >
+                      {formError}
+                    </p>
+                  )}
+
                   {/* Submit */}
                   <div className="flex gap-3">
                     <button
                       onClick={handleSubmit}
-                      disabled={!type || !description.trim() || submitting}
+                      disabled={!userId || !type || !description.trim() || submitting}
                       className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
                     >
                       {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       {rl.submit}
                     </button>
                     <button
-                      onClick={() => setShowForm(false)}
+                      onClick={resetForm}
                       className="px-4 py-3 rounded-xl bg-secondary text-secondary-foreground hover:bg-secondary/80 text-sm"
                     >
                       Cancel

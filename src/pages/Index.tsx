@@ -21,6 +21,7 @@ import { TideForecast } from '@/components/TideForecast';
 import { EmergencyBroadcastBanner } from '@/components/EmergencyBroadcastBanner';
 import { LocationTracker } from '@/components/LocationTracker';
 import { CitizenReporting } from '@/components/CitizenReporting';
+import { IncidentIntelligence } from '@/components/IncidentIntelligence';
 import { DataSourcesFooter } from '@/components/DataSourcesFooter';
 import { LogOut, User } from 'lucide-react';
 
@@ -126,6 +127,11 @@ const Index = () => {
 
       {/* Citizen Reporting */}
       <CitizenReporting language={language} userId={user?.id} />
+
+      {/* Operational incident view. The component itself checks the role claim
+          and renders an explicit access notice for non-operational users, so
+          it is always mounted and always states which view you are seeing. */}
+      <IncidentIntelligence language={language} user={user} />
 
       <TouristMode language={language} />
 

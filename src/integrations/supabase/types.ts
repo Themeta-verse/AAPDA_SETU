@@ -6,6 +6,23 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+/**
+ * Application roles, mirroring the `profiles.role` CHECK constraint in
+ * supabase/migrations/20260308175355_9dfc122f-c459-43ed-8fb2-9d7d1e88a2cc.sql.
+ *
+ * NOTE: this column is for DISPLAY only. Authorization is decided in Postgres
+ * by `public.current_app_role()`, which reads the `app_metadata` claim — a
+ * column this client cannot write. Never gate security on a client-side read
+ * of `profiles.role`; it can drift from the trusted claim.
+ */
+export type AppRole = 'citizen' | 'responder' | 'admin'
+
+/**
+ * `incident_reports.type` CHECK constraint. Anything outside this set is
+ * rejected by the database, so the UI must never offer another value.
+ */
+export type IncidentType = 'flooding' | 'high_waves' | 'blocked_roads' | 'other'
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -49,7 +66,7 @@ export type Database = {
           latitude: number | null
           longitude: number | null
           photo_url: string | null
-          type: string
+          type: IncidentType
           user_id: string
         }
         Insert: {
@@ -59,7 +76,7 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           photo_url?: string | null
-          type: string
+          type: IncidentType
           user_id: string
         }
         Update: {
@@ -69,7 +86,7 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           photo_url?: string | null
-          type?: string
+          type?: IncidentType
           user_id?: string
         }
         Relationships: []
@@ -82,6 +99,7 @@ export type Database = {
           longitude: number | null
           name: string
           phone: string | null
+          role: AppRole
           updated_at: string
         }
         Insert: {
@@ -91,6 +109,7 @@ export type Database = {
           longitude?: number | null
           name?: string
           phone?: string | null
+          role?: AppRole
           updated_at?: string
         }
         Update: {
@@ -100,6 +119,7 @@ export type Database = {
           longitude?: number | null
           name?: string
           phone?: string | null
+          role?: AppRole
           updated_at?: string
         }
         Relationships: []
