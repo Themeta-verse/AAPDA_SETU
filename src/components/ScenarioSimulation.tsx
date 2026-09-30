@@ -3,7 +3,11 @@ import { Waves, Zap, CloudRain, RotateCcw, Radio, AlertTriangle } from 'lucide-r
 import { type Language, translations, voiceAlertTexts, speakAlert } from '@/lib/translations';
 import { type MonitoringData } from '@/lib/monitoringData';
 
-export type ScenarioType = 'highTide' | 'tsunami' | 'flood' | null;
+/**
+ * Simulated scenarios use the same identifiers as live alerts so the banner,
+ * cards and voice scripts stay in sync. `highWave` is wave height, not tide.
+ */
+export type ScenarioType = 'highWave' | 'tsunami' | 'flood' | null;
 
 interface ScenarioSimulationProps {
   language: Language;
@@ -13,12 +17,12 @@ interface ScenarioSimulationProps {
 
 export function getScenarioData(scenario: ScenarioType): MonitoringData | null {
   switch (scenario) {
-    case 'highTide':
-      return { tideLevel: 4.8, windSpeed: 22, rainProbability: 45, seaCondition: 'rough', riskLevel: 'critical' };
+    case 'highWave':
+      return { waveHeight: 4.8, windSpeed: 22, rainProbability: 45, seaCondition: 'rough', riskLevel: 'critical', status: 'live' };
     case 'tsunami':
-      return { tideLevel: 5.0, windSpeed: 35, rainProbability: 30, seaCondition: 'veryRough', riskLevel: 'critical' };
+      return { waveHeight: 5.0, windSpeed: 35, rainProbability: 30, seaCondition: 'veryRough', riskLevel: 'critical', status: 'live' };
     case 'flood':
-      return { tideLevel: 3.8, windSpeed: 18, rainProbability: 92, seaCondition: 'rough', riskLevel: 'critical' };
+      return { waveHeight: 3.8, windSpeed: 18, rainProbability: 92, seaCondition: 'rough', riskLevel: 'critical', status: 'live' };
     default:
       return null;
   }
@@ -28,7 +32,7 @@ export function ScenarioSimulation({ language, activeScenario, onSimulate }: Sce
   const t = translations[language];
 
   const scenarios = [
-    { id: 'highTide' as ScenarioType, label: t.simulateHighTide, icon: Waves, color: 'text-warning', bg: 'bg-warning/10 border-warning/30 hover:bg-warning/20' },
+    { id: 'highWave' as ScenarioType, label: t.simulateHighWave, icon: Waves, color: 'text-warning', bg: 'bg-warning/10 border-warning/30 hover:bg-warning/20' },
     { id: 'tsunami' as ScenarioType, label: t.simulateTsunami, icon: Zap, color: 'text-danger', bg: 'bg-danger/10 border-danger/30 hover:bg-danger/20' },
     { id: 'flood' as ScenarioType, label: t.simulateFlood, icon: CloudRain, color: 'text-primary', bg: 'bg-primary/10 border-primary/30 hover:bg-primary/20' },
   ];
@@ -36,7 +40,7 @@ export function ScenarioSimulation({ language, activeScenario, onSimulate }: Sce
   const handleSimulate = (scenario: ScenarioType) => {
     onSimulate(scenario);
     if (scenario) {
-      const voiceKey = scenario === 'highTide' ? 'highTide' : scenario === 'tsunami' ? 'tsunami' : 'flood';
+      const voiceKey = scenario === 'highWave' ? 'highWave' : scenario === 'tsunami' ? 'tsunami' : 'flood';
       const text = voiceAlertTexts[language][voiceKey];
       if (text) speakAlert(text, language);
     }

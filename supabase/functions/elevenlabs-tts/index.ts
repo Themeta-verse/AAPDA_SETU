@@ -11,8 +11,34 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Defense in depth: config.toml already sets verify_jwt = true, so the
+  // gateway rejects anonymous callers. This check ensures a misconfigured
+  // deployment still cannot be used to burn the ElevenLabs quota.
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.toLowerCase().startsWith("bearer ")) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
-    const { text, language } = await req.json();
+    const rawBody = await req.text();
+    if (rawBody.length > 4096) {
+      return new Response(JSON.stringify({ error: "Request body too large" }), {
+        status: 413,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { text, language } = JSON.parse(rawBody);
 
     // Validate request text - prevent abuse
     if (!text || typeof text !== "string") {

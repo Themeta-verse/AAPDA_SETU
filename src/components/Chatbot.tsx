@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, Send, X, Bot, User, Zap, Loader2, Sparkles } from 'lucide-react';
 import { type Language, translations } from '@/lib/translations';
 import { type MonitoringData } from '@/lib/monitoringData';
+import { supabase } from '@/integrations/supabase/client';
 import ReactMarkdown from 'react-markdown';
 
 interface ChatbotProps {
@@ -46,12 +47,19 @@ export function Chatbot({ language, monitoringData }: ChatbotProps) {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+      // Edge Functions run with verify_jwt = true. Send the signed-in user's
+      // access token so the gateway can identify the caller and the function
+      // can apply role checks; fall back to the publishable key only for the
+      // brief pre-login window.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const bearer = sessionData.session?.access_token ?? SUPABASE_KEY;
+
       const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Authorization': `Bearer ${bearer}`,
         },
         body: JSON.stringify({
           messages: newMessages,
@@ -59,6 +67,10 @@ export function Chatbot({ language, monitoringData }: ChatbotProps) {
           language,
         }),
       });
+
+      if (!response.ok) {
+        throw new Error(`Edge function responded with HTTP ${response.status}`);
+      }
 
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);

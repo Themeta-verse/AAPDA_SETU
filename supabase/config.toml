@@ -1,4 +1,13 @@
-project_id = "aizyxllkonymfddbhcze"
+# Edge Function gateway configuration.
+#
+# NOTE: verify_jwt was ALREADY true for both functions before this hardening
+# pass. An earlier audit reported it as false; that was incorrect. The real
+# gap was that the browser sent the publishable key as the bearer token rather
+# than the user's access token, so the gateway could not attribute a caller.
+# The clients now send `session.access_token`.
+#
+# Keep these true. Each function also re-checks for a bearer token as
+# defense in depth.
 
 [functions.elevenlabs-tts]
 verify_jwt = true

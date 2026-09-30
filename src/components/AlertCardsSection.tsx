@@ -1,20 +1,19 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, ChevronRight, Volume2, VolumeX, X, Waves, CloudRain, Zap, Wind, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Volume2, VolumeX, X, Waves, CloudRain, Zap, ShieldAlert } from 'lucide-react';
 import { type Language, translations, voiceAlertTexts, speakAlert, stopSpeaking } from '@/lib/translations';
-import { type AlertInfo } from '@/lib/monitoringData';
+import { type AlertInfo, type AlertType } from '@/lib/monitoringData';
 
 interface AlertCardsSectionProps {
   alerts: AlertInfo[];
   language: Language;
 }
 
-const alertIcons: Record<string, typeof Waves> = {
-  highTide: Waves,
+const alertIcons: Record<AlertType, typeof Waves> = {
+  highWave: Waves,
   tsunami: Zap,
   flood: CloudRain,
   rain: CloudRain,
-  storm: Wind,
 };
 
 export function AlertCardsSection({ alerts, language }: AlertCardsSectionProps) {

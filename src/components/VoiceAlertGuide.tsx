@@ -14,7 +14,7 @@ export function VoiceAlertGuide({ language, riskLevel }: VoiceAlertGuideProps) {
   const [speaking, setSpeaking] = useState<string | null>(null);
 
   const alerts = [
-    { key: 'highTide', label: t.highTideWarning, icon: Waves, color: 'text-warning', bg: 'bg-warning/10 border-warning/30', hoverBg: 'hover:bg-warning/20' },
+    { key: 'highWave', label: t.highWaveWarning, icon: Waves, color: 'text-warning', bg: 'bg-warning/10 border-warning/30', hoverBg: 'hover:bg-warning/20' },
     { key: 'tsunami', label: t.tsunamiRisk, icon: Zap, color: 'text-danger', bg: 'bg-danger/10 border-danger/30', hoverBg: 'hover:bg-danger/20' },
     { key: 'flood', label: t.coastalFlood, icon: CloudRain, color: 'text-primary', bg: 'bg-primary/10 border-primary/30', hoverBg: 'hover:bg-primary/20' },
     { key: 'rain', label: t.heavyRain, icon: AlertTriangle, color: 'text-warning', bg: 'bg-warning/10 border-warning/30', hoverBg: 'hover:bg-warning/20' },

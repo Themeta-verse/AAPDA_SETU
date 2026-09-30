@@ -12,7 +12,7 @@ interface EmergencyBroadcastBannerProps {
 }
 
 const scenarioConfig: Record<string, { icon: typeof Waves; voiceKey: string; titleKey: string; descKey: string; countdown: number }> = {
-  highTide: { icon: Waves, voiceKey: 'highTide', titleKey: 'highTideWarning', descKey: 'highTideDesc', countdown: 900 },
+  highWave: { icon: Waves, voiceKey: 'highWave', titleKey: 'highWaveWarning', descKey: 'highWaveDesc', countdown: 900 },
   tsunami: { icon: Zap, voiceKey: 'tsunami', titleKey: 'tsunamiRisk', descKey: 'tsunamiDesc', countdown: 600 },
   flood: { icon: CloudRain, voiceKey: 'flood', titleKey: 'coastalFlood', descKey: 'coastalFloodDesc', countdown: 1200 },
 };

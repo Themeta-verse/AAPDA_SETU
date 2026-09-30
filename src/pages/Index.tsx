@@ -26,7 +26,7 @@ import { LogOut, User } from 'lucide-react';
 
 const Index = () => {
   const [language, setLanguage] = useState<Language>('en');
-  const { data, alerts, clock, weather, marineHourly, earthquakes, tsunamiRisk, sourceStatus } = useMonitoring(8000);
+  const { data, alerts, clock, marine, earthquakes, tsunamiRisk, sourceStatus } = useMonitoring(8000);
   const { user, signOut } = useAuth();
   const alertsRef = useRef<HTMLDivElement>(null);
   const [activeScenario, setActiveScenario] = useState<ScenarioType>(null);
@@ -55,10 +55,15 @@ const Index = () => {
           <span className="font-bold text-primary text-sm tracking-wide">🌊 BAYWATCH</span>
           <div className="flex items-center gap-2">
             {/* Live data indicator */}
-            {weather.isLive && (
+            {marine.status === 'live' && (
               <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-full bg-safe/10 border border-safe/20 text-[10px] text-safe font-medium">
                 <div className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" />
                 LIVE
+              </div>
+            )}
+            {marine.status === 'stale' && (
+              <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-full bg-warning/10 border border-warning/20 text-[10px] text-warning font-medium">
+                STALE
               </div>
             )}
             {/* User info */}
@@ -93,14 +98,15 @@ const Index = () => {
         clock={clock}
         onViewAlerts={scrollToAlerts}
         isSimulation={!!activeScenario}
+        sourceStatus={sourceStatus}
       />
 
-      <MonitoringDashboard data={activeData} language={language} clock={clock} weather={weather} earthquakes={earthquakes} />
+      <MonitoringDashboard data={activeData} language={language} clock={clock} marine={marine} earthquakes={earthquakes} />
 
       {/* GPS Location & Distance */}
       <LocationTracker language={language} riskLevel={activeData.riskLevel} />
 
-      <TideForecast language={language} marineHourly={marineHourly} tideStatus={weather.isLive ? 'live' : 'unavailable'} />
+      <TideForecast language={language} marine={marine} />
 
       <div ref={alertsRef}>
         <AlertCardsSection alerts={activeAlerts} language={language} />
@@ -130,8 +136,8 @@ const Index = () => {
       {/* Data Sources & System Status */}
       <DataSourcesFooter
         language={language}
-        lastFetched={weather.lastFetched}
-        isLive={weather.isLive}
+        fetchedAt={marine.fetchedAt}
+        status={sourceStatus}
       />
 
       {/* Footer */}
@@ -140,7 +146,7 @@ const Index = () => {
         <p>Multilingual coastal disaster alert platform © {new Date().getFullYear()}</p>
         <p className="mt-1">For educational and awareness purposes. Always follow official NDMA guidelines.</p>
         <p className="mt-2 text-[10px] text-muted-foreground/60">
-          Data: Open-Meteo · INCOIS · IMD · NDMA · USGS
+          Data: Open-Meteo · Open-Meteo Marine · USGS
         </p>
       </footer>
 

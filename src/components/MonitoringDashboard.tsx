@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { Waves, Wind, CloudRain, Anchor, Gauge, Thermometer, Compass, Activity, BarChart3, Radio } from 'lucide-react';
 import { type Language, translations } from '@/lib/translations';
-import { type MonitoringData, riskColors } from '@/lib/monitoringData';
-import { type WeatherData } from '@/hooks/useWeatherData';
+import { type MonitoringData, riskColors, statusHasMeasurements } from '@/lib/monitoringData';
+import { type NormalizedMarine } from '@/hooks/useWeatherData';
 import { type EarthquakeEvent } from '@/hooks/useEarthquakeData';
 import { RiskLegend } from './RiskLegend';
 
@@ -11,8 +11,16 @@ interface MonitoringDashboardProps {
   language: Language;
   clock: Date;
   alertIssuedTime?: Date;
-  weather?: WeatherData;
+  marine?: NormalizedMarine;
   earthquakes?: EarthquakeEvent[];
+}
+
+/**
+ * Render a measurement without fabricating a value. `null` becomes an explicit
+ * em dash so an unavailable reading never looks like `0`.
+ */
+function reading(value: number | null, unit = ''): string {
+  return value === null ? '—' : `${value}${unit}`;
 }
 
 function GaugeRing({ value, max, color, size = 64 }: { value: number; max: number; color: string; size?: number }) {
@@ -37,25 +45,34 @@ function GaugeRing({ value, max, color, size = 64 }: { value: number; max: numbe
   );
 }
 
-export function MonitoringDashboard({ data, language, clock, alertIssuedTime, weather, earthquakes }: MonitoringDashboardProps) {
+export function MonitoringDashboard({ data, language, clock, alertIssuedTime, marine, earthquakes }: MonitoringDashboardProps) {
   const t = translations[language];
+  const hasData = statusHasMeasurements(data.status);
+
+  // Gauge raw values are numeric-only; a missing reading contributes no fill
+  // rather than a zero that reads as a healthy measurement.
+  const gauge = (value: number | null) => (value === null ? 0 : value);
 
   const metrics = [
-    { icon: Waves, label: t.tideLevel, value: `${data.tideLevel}m`, raw: data.tideLevel, max: 6, warn: data.tideLevel > 3.5, critical: data.tideLevel > 4.0 },
-    { icon: Wind, label: t.windSpeed, value: `${data.windSpeed} km/h`, raw: data.windSpeed, max: 60, warn: data.windSpeed > 20, critical: data.windSpeed > 30 },
-    { icon: CloudRain, label: t.rainProbability, value: `${data.rainProbability}%`, raw: data.rainProbability, max: 100, warn: data.rainProbability > 60, critical: data.rainProbability > 80 },
-    { icon: Anchor, label: t.seaCondition, value: t[data.seaCondition], raw: data.seaCondition === 'veryRough' ? 90 : data.seaCondition === 'rough' ? 60 : 20, max: 100, warn: data.seaCondition === 'rough', critical: data.seaCondition === 'veryRough' },
-    ...(weather ? [
-      { icon: Thermometer, label: 'Temperature', value: `${weather.temperature}°C`, raw: weather.temperature, max: 50, warn: weather.temperature > 40, critical: weather.temperature > 45 },
-      { icon: BarChart3, label: 'Pressure', value: `${weather.pressure} hPa`, raw: Math.max(0, 1050 - weather.pressure), max: 60, warn: weather.pressure < 1005, critical: weather.pressure < 995 },
-      { icon: Compass, label: 'Wave Dir / Period', value: `${weather.waveDirection}° / ${weather.wavePeriod}s`, raw: weather.wavePeriod, max: 20, warn: false, critical: false },
+    { icon: Waves, label: t.waveHeight, value: reading(data.waveHeight, 'm'), raw: gauge(data.waveHeight), max: 6, warn: data.waveHeight !== null && data.waveHeight > 3.5, critical: data.waveHeight !== null && data.waveHeight > 4.0 },
+    { icon: Wind, label: t.windSpeed, value: reading(data.windSpeed, ' km/h'), raw: gauge(data.windSpeed), max: 60, warn: data.windSpeed !== null && data.windSpeed > 20, critical: data.windSpeed !== null && data.windSpeed > 30 },
+    { icon: CloudRain, label: t.rainProbability, value: reading(data.rainProbability, '%'), raw: gauge(data.rainProbability), max: 100, warn: data.rainProbability !== null && data.rainProbability > 60, critical: data.rainProbability !== null && data.rainProbability > 80 },
+    { icon: Anchor, label: t.seaCondition, value: data.seaCondition ? t[data.seaCondition] : '—', raw: data.seaCondition === 'veryRough' ? 90 : data.seaCondition === 'rough' ? 60 : data.seaCondition === 'calm' ? 20 : 0, max: 100, warn: data.seaCondition === 'rough', critical: data.seaCondition === 'veryRough' },
+    ...(marine ? [
+      { icon: Thermometer, label: 'Temperature', value: reading(marine.temperature, '°C'), raw: gauge(marine.temperature), max: 50, warn: marine.temperature !== null && marine.temperature > 40, critical: marine.temperature !== null && marine.temperature > 45 },
+      { icon: BarChart3, label: 'Pressure', value: reading(marine.pressure, ' hPa'), raw: marine.pressure === null ? 0 : Math.max(0, 1050 - marine.pressure), max: 60, warn: marine.pressure !== null && marine.pressure < 1005, critical: marine.pressure !== null && marine.pressure < 995 },
+      { icon: Compass, label: 'Wave Dir / Period', value: `${reading(marine.waveDirection, '°')} / ${reading(marine.wavePeriod, 's')}`, raw: gauge(marine.wavePeriod), max: 20, warn: false, critical: false },
     ] : []),
   ];
 
   const riskLabel = data.riskLevel === 'critical' ? t.critical : data.riskLevel === 'high' ? t.high : data.riskLevel === 'moderate' ? t.moderate : t.safe;
   const issuedTime = alertIssuedTime || new Date(clock.getTime() - 25000);
 
-  const riskColor = data.riskLevel === 'safe' ? 'hsl(var(--safe))' : data.riskLevel === 'moderate' ? 'hsl(var(--warning))' : 'hsl(var(--danger))';
+  // Without measurements there is no risk verdict to show. Rendering the
+  // placeholder `safe` value as a green all-clear would be a false claim.
+  const riskColor = !hasData ? 'hsl(var(--muted-foreground))' : data.riskLevel === 'safe' ? 'hsl(var(--safe))' : data.riskLevel === 'moderate' ? 'hsl(var(--warning))' : 'hsl(var(--danger))';
+  const riskTone = !hasData ? 'text-muted-foreground' : data.riskLevel === 'safe' ? 'text-safe' : data.riskLevel === 'moderate' ? 'text-warning' : 'text-danger';
+  const statusTone = data.status === 'live' ? 'text-safe' : data.status === 'stale' ? 'text-warning' : 'text-muted-foreground';
 
   return (
     <section id="monitoring" className="container py-8" aria-label="Monitoring dashboard">
@@ -77,9 +94,9 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, we
           {/* Top status bar */}
           <div className="flex flex-wrap gap-3 mb-4 pb-4 border-b border-border/50 text-xs">
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-safe animate-pulse" />
+              <div className={`w-2.5 h-2.5 rounded-full ${data.status === 'live' ? 'bg-safe animate-pulse' : data.status === 'stale' ? 'bg-warning' : 'bg-muted-foreground'}`} />
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.currentStatus}:</span>
-              <span className="font-bold text-safe">{t.systemActive}</span>
+              <span className={`font-bold uppercase ${statusTone}`}>{t.systemActive}</span>
             </div>
             <div className="flex items-center gap-2">
               <Radio className="w-3 h-3 text-primary" />
@@ -88,9 +105,9 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, we
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.riskLevel}:</span>
-              <span className={`font-black uppercase tracking-wide ${
-                data.riskLevel === 'safe' ? 'text-safe' : data.riskLevel === 'moderate' ? 'text-warning' : 'text-danger'
-              }`}>{riskLabel}</span>
+              <span className={`font-black uppercase tracking-wide ${riskTone}`}>
+                {hasData ? riskLabel : 'NO DATA'}
+              </span>
             </div>
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.lastUpdated}:</span>
@@ -103,22 +120,28 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, we
             <div className="flex items-center gap-4">
               <div className="relative">
                 <GaugeRing
-                  value={data.riskLevel === 'critical' ? 95 : data.riskLevel === 'high' ? 75 : data.riskLevel === 'moderate' ? 50 : 15}
+                  value={hasData ? (data.riskLevel === 'critical' ? 95 : data.riskLevel === 'high' ? 75 : data.riskLevel === 'moderate' ? 50 : 15) : 0}
                   max={100}
                   color={riskColor}
                   size={72}
                 />
-                <div className={`absolute inset-0 flex items-center justify-center text-xs font-black ${
-                  data.riskLevel === 'safe' ? 'text-safe' : data.riskLevel === 'moderate' ? 'text-warning' : 'text-danger'
-                }`}>
-                  {data.riskLevel === 'critical' ? '!' : data.riskLevel === 'high' ? '!!' : data.riskLevel === 'moderate' ? '~' : '✓'}
+                <div className={`absolute inset-0 flex items-center justify-center text-xs font-black ${riskTone}`}>
+                  {!hasData
+                    ? '?'
+                    : data.riskLevel === 'critical'
+                      ? '!'
+                      : data.riskLevel === 'high'
+                        ? '!!'
+                        : data.riskLevel === 'moderate'
+                          ? '~'
+                          : '✓'}
                 </div>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">{t.riskLevel}</p>
-                <p className={`text-2xl font-black ${
-                  data.riskLevel === 'safe' ? 'text-safe' : data.riskLevel === 'moderate' ? 'text-warning' : 'text-danger'
-                }`}>{riskLabel}</p>
+                <p className={`text-2xl font-black ${riskTone}`}>
+                  {hasData ? riskLabel : 'NO DATA'}
+                </p>
               </div>
             </div>
             <div className="text-right font-mono text-xs text-muted-foreground space-y-1">
@@ -163,9 +186,7 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, we
                   </div>
                   <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">{m.label}</span>
                 </div>
-                <p className={`text-2xl font-black font-mono ${
-                  m.critical ? 'text-danger' : m.warn ? 'text-warning' : 'text-foreground'
-                }`}>
+                <p className={`text-2xl font-black font-mono ${m.critical ? 'text-danger' : m.warn ? 'text-warning' : hasData ? 'text-foreground' : 'text-muted-foreground'}`}>
                   {m.value}
                 </p>
               </motion.div>

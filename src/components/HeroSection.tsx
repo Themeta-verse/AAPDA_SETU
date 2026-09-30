@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { Shield, MapPin, Activity, AlertTriangle, Radio, Wifi, Radar, Signal } from 'lucide-react';
 import { type Language, translations } from '@/lib/translations';
-import { type RiskLevel } from '@/lib/monitoringData';
+import { statusHasMeasurements, type RiskLevel } from '@/lib/monitoringData';
+import type { SourceStatus } from '@/integrations/adapters/types';
 
 interface HeroSectionProps {
   language: Language;
@@ -9,12 +10,15 @@ interface HeroSectionProps {
   clock: Date;
   onViewAlerts: () => void;
   isSimulation?: boolean;
+  /** Freshness of the underlying source. LIVE claims are gated on this. */
+  sourceStatus?: SourceStatus;
 }
 
-export function HeroSection({ language, riskLevel, clock, onViewAlerts, isSimulation }: HeroSectionProps) {
+export function HeroSection({ language, riskLevel, clock, onViewAlerts, isSimulation, sourceStatus = 'unavailable' }: HeroSectionProps) {
   const t = translations[language];
+  const hasData = statusHasMeasurements(sourceStatus);
   const riskKey = riskLevel === 'critical' ? 'critical' : riskLevel === 'high' ? 'high' : riskLevel === 'moderate' ? 'moderate' : 'safe';
-  const riskLabel = t[riskKey];
+  const riskLabel = hasData ? t[riskKey] : 'NO DATA';
 
   const statusColor = riskLevel === 'safe' ? 'bg-safe' : riskLevel === 'moderate' ? 'bg-warning' : 'bg-danger';
   const statusBorder = riskLevel === 'safe' ? 'border-safe/30' : riskLevel === 'moderate' ? 'border-warning/30' : 'border-danger/30';
@@ -73,16 +77,22 @@ export function HeroSection({ language, riskLevel, clock, onViewAlerts, isSimula
           {/* Authority status bar */}
           <div className="flex items-center justify-center gap-2 sm:gap-3 mb-8 flex-wrap">
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${statusBorder} bg-card/60 backdrop-blur-sm`}>
-              <div className={`w-2.5 h-2.5 rounded-full ${statusColor} animate-pulse`} />
-              <span className="text-xs font-bold uppercase tracking-wider text-foreground">{t.systemActive}</span>
+              <div className={`w-2.5 h-2.5 rounded-full ${statusColor} ${hasData ? 'animate-pulse' : ''}`} />
+              <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                {sourceStatus.toUpperCase()}
+              </span>
             </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5 backdrop-blur-sm">
-              <Radar className="w-3.5 h-3.5 text-primary animate-spin" style={{ animationDuration: '4s' }} />
-              <span className="text-xs font-mono text-primary font-semibold">{t.liveMonitoring}</span>
-            </div>
+            {sourceStatus === 'live' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5 backdrop-blur-sm">
+                <Radar className="w-3.5 h-3.5 text-primary animate-spin" style={{ animationDuration: '4s' }} />
+                <span className="text-xs font-mono text-primary font-semibold">{t.liveMonitoring}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card/60 backdrop-blur-sm">
-              <Signal className="w-3.5 h-3.5 text-safe" />
-              <span className="text-xs text-muted-foreground font-medium">{t.monitoringMode}: LIVE</span>
+              <Signal className={`w-3.5 h-3.5 ${sourceStatus === 'live' ? 'text-safe' : 'text-muted-foreground'}`} />
+              <span className="text-xs text-muted-foreground font-medium">
+                {t.monitoringMode}: {sourceStatus.toUpperCase()}
+              </span>
             </div>
             {isSimulation && (
               <motion.div

@@ -24,7 +24,7 @@ export function TouristMode({ language }: TouristModeProps) {
       setSpeaking(false);
       return;
     }
-    const text = voiceAlertTexts[language].highTide;
+    const text = voiceAlertTexts[language].highWave;
     if (text) {
       setSpeaking(true);
       speakAlert(text, language, () => setSpeaking(false));

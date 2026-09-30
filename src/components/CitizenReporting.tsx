@@ -77,13 +77,17 @@ export function CitizenReporting({ language, userId }: CitizenReportingProps) {
 
       if (photo) {
         const ext = photo.name.split('.').pop();
+        // Path convention is relied on by the storage RLS policies: the
+        // first segment is the uploader's auth user id.
         const path = `${userId}/${Date.now()}.${ext}`;
         const { error: uploadErr } = await supabase.storage
           .from('incident-photos')
           .upload(path, photo);
         if (!uploadErr) {
-          const { data: urlData } = supabase.storage.from('incident-photos').getPublicUrl(path);
-          photoUrl = urlData.publicUrl;
+          // The bucket is private, so a public URL would not resolve.
+          // Store the object path; resolve it with createSignedUrl() at read
+          // time, scoped by the same owner-or-responder policy.
+          photoUrl = path;
         }
       }
 
