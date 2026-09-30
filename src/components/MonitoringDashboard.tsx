@@ -3,7 +3,7 @@ import { Waves, Wind, CloudRain, Anchor, Gauge, Thermometer, Compass, Activity, 
 import { type Language, translations } from '@/lib/translations';
 import { type MonitoringData, riskColors, statusHasMeasurements } from '@/lib/monitoringData';
 import { type NormalizedMarine } from '@/hooks/useWeatherData';
-import { type EarthquakeEvent } from '@/hooks/useEarthquakeData';
+import { type EarthquakeState } from '@/hooks/useEarthquakeData';
 import { RiskLegend } from './RiskLegend';
 
 interface MonitoringDashboardProps {
@@ -12,7 +12,7 @@ interface MonitoringDashboardProps {
   clock: Date;
   alertIssuedTime?: Date;
   marine?: NormalizedMarine;
-  earthquakes?: EarthquakeEvent[];
+  earthquakes?: EarthquakeState;
 }
 
 /**
@@ -194,42 +194,150 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
           })}
         </div>
 
-        {/* Earthquake Activity */}
-        {earthquakes && earthquakes.length > 0 && (
+        {/* Earthquake Activity — USGS Earthquake Hazards Program feed */}
+        {earthquakes && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             className="mt-6"
           >
-            <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-warning" />
-              Seismic Activity – Indian Ocean Region
-            </h3>
-            <div className="glass-card rounded-xl p-4 border-border overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-muted-foreground border-b border-border uppercase tracking-wider">
-                    <th className="text-left pb-2 pr-4 font-semibold">Magnitude</th>
-                    <th className="text-left pb-2 pr-4 font-semibold">Location</th>
-                    <th className="text-left pb-2 font-semibold">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {earthquakes.slice(0, 5).map((eq) => (
-                    <tr key={eq.id} className="border-b border-border/30">
-                      <td className={`py-2.5 pr-4 font-mono font-black ${
-                        eq.magnitude >= 6 ? 'text-danger' : eq.magnitude >= 4 ? 'text-warning' : 'text-foreground'
-                      }`}>
-                        M{eq.magnitude.toFixed(1)}
-                      </td>
-                      <td className="py-2.5 pr-4 text-muted-foreground">{eq.place}</td>
-                      <td className="py-2.5 text-muted-foreground font-mono">{new Date(eq.time).toLocaleTimeString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Activity className="w-5 h-5 text-warning" />
+                Seismic Activity — Indian Ocean Region
+              </h3>
+              {earthquakes.status === 'live' && (
+                <span className="px-2 py-0.5 rounded-full bg-safe/10 border border-safe/20 text-[10px] text-safe font-medium">LIVE</span>
+              )}
+              {earthquakes.status === 'stale' && (
+                <span className="px-2 py-0.5 rounded-full bg-warning/10 border border-warning/20 text-[10px] text-warning font-medium">STALE</span>
+              )}
+              {(earthquakes.status === 'unavailable' || earthquakes.status === 'offline') && (
+                <span className="px-2 py-0.5 rounded-full bg-secondary border border-border text-[10px] text-muted-foreground font-medium">
+                  {earthquakes.status.toUpperCase()}
+                </span>
+              )}
+              {earthquakes.tsunamiFlag === true && (
+                <span className="px-2 py-0.5 rounded-full bg-danger/20 border border-danger/30 text-[10px] text-danger font-medium">
+                  USGS TSUNAMI FLAG SET
+                </span>
+              )}
             </div>
+
+            <p className="text-xs text-muted-foreground mb-3">
+              Source: {earthquakes.source.label}
+              {earthquakes.source.url && (
+                <>
+                  {' '}
+                  —{' '}
+                  <a
+                    href={earthquakes.source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    official real-time GeoJSON feed
+                  </a>
+                </>
+              )}
+              {earthquakes.feedGeneratedAt && (
+                <span className="ml-2 font-mono">feed generated {new Date(earthquakes.feedGeneratedAt).toLocaleString()}</span>
+              )}
+            </p>
+
+            {earthquakes.status !== 'live' && earthquakes.status !== 'stale' ? (
+              <div className="glass-card rounded-xl p-5 border-border text-center">
+                <p className="text-sm font-semibold text-foreground">
+                  {earthquakes.status === 'offline' ? 'Offline — no earthquake data' : 'No earthquake data available'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The USGS feed could not be read. No events are shown rather than estimated ones.
+                </p>
+                {earthquakes.error && (
+                  <p className="text-[10px] font-mono text-muted-foreground/70 mt-2 break-all">
+                    {earthquakes.error.kind}: {earthquakes.error.message}
+                  </p>
+                )}
+                <p className="text-[10px] text-muted-foreground/70 mt-2">
+                  Tsunami status: unknown — USGS could not be read
+                </p>
+              </div>
+            ) : earthquakes.events.length === 0 ? (
+              <div className="glass-card rounded-xl p-5 border-border text-center">
+                <p className="text-sm font-semibold text-foreground">No earthquakes reported in this region in the past 24 hours</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The USGS feed was read successfully — it reported {earthquakes.totalInFeed} event
+                  {earthquakes.totalInFeed === 1 ? '' : 's'} worldwide, none inside the monitored
+                  region. Tsunami status: none flagged.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="glass-card rounded-xl p-4 border-border overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground border-b border-border uppercase tracking-wider">
+                        <th className="text-left pb-2 pr-4 font-semibold">Magnitude</th>
+                        <th className="text-left pb-2 pr-4 font-semibold">Location</th>
+                        <th className="text-left pb-2 pr-4 font-semibold">Time</th>
+                        <th className="text-left pb-2 pr-4 font-semibold">Depth</th>
+                        <th className="text-left pb-2 font-semibold">Tsunami</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {earthquakes.events.slice(0, 5).map((eq) => (
+                        <tr key={eq.id} className="border-b border-border/30">
+                          <td className={`py-2.5 pr-4 font-mono font-black ${
+                            eq.magnitude === null
+                              ? 'text-muted-foreground'
+                              : eq.magnitude >= 6
+                                ? 'text-danger'
+                                : eq.magnitude >= 4
+                                  ? 'text-warning'
+                                  : 'text-foreground'
+                          }`}>
+                            {eq.magnitude === null ? 'M—' : `M${eq.magnitude.toFixed(1)}`}
+                          </td>
+                          <td className="py-2.5 pr-4 text-muted-foreground">
+                            {eq.eventUrl ? (
+                              <a href={eq.eventUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
+                                {eq.place ?? '—'}
+                              </a>
+                            ) : (
+                              (eq.place ?? '—')
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-4 text-muted-foreground font-mono">
+                            {eq.occurredAt ? new Date(eq.occurredAt).toLocaleString() : '—'}
+                          </td>
+                          <td className="py-2.5 pr-4 text-muted-foreground font-mono">
+                            {eq.depthKm === null ? '—' : `${eq.depthKm.toFixed(1)} km`}
+                          </td>
+                          <td className="py-2.5 font-mono">
+                            {eq.tsunami === null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : eq.tsunami ? (
+                              <span className="text-danger font-bold">YES</span>
+                            ) : (
+                              <span className="text-muted-foreground">NO</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {earthquakes.rejectedCount > 0 && (
+                  <p className="text-[10px] text-muted-foreground/70 mt-2">
+                    {earthquakes.rejectedCount} malformed record
+                    {earthquakes.rejectedCount === 1 ? ' was' : 's were'} discarded by validation;
+                    the remaining {earthquakes.events.length} event
+                    {earthquakes.events.length === 1 ? '' : 's'} shown are real USGS records.
+                  </p>
+                )}
+              </>
+            )}
           </motion.div>
         )}
       </motion.div>

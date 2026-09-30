@@ -30,6 +30,72 @@ export const MARINE_RANGES = {
 
 export type RangeName = keyof typeof MARINE_RANGES;
 
+/**
+ * Plausible bounds for USGS event values.
+ *
+ * Deliberately wider than anything the feed has published: these exist to
+ * catch `null`, `NaN`, strings and impossible coordinates, not to filter
+ * unusual-but-real seismicity. USGS magnitudes are routinely negative (small
+ * quarry blasts) and have exceeded 9.
+ */
+export const EARTHQUAKE_RANGES = {
+  magnitude: { min: -10, max: 12 },
+  longitude: { min: -180, max: 180 },
+  latitude: { min: -90, max: 90 },
+  depthKm: { min: -50, max: 1000 },
+  /** Epoch milliseconds, bounded to 1970..2100 to reject junk. */
+  epochMs: { min: 0, max: 4_102_444_800_000 },
+} as const satisfies Record<string, NumberRange>;
+
+/**
+ * Validate a USGS epoch-millisecond timestamp and convert it to ISO-8601.
+ *
+ * USGS publishes `properties.time`, `properties.updated` and
+ * `metadata.generated` as integer epoch milliseconds. Converting to ISO is a
+ * deterministic, lossless transformation that matches the ISO convention used
+ * by the rest of the adapter layer. Anything unusable returns `null`.
+ */
+export function validateEpochMs(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim() !== '') {
+    // Some USGS serialisations emit these as numeric strings.
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) value = asNumber;
+  }
+  const ms = validateNumber(value, EARTHQUAKE_RANGES.epochMs);
+  if (ms === null) return null;
+  return new Date(ms).toISOString();
+}
+
+/**
+ * Normalize the USGS tsunami indicator into a nullable boolean.
+ *
+ * MAPPING (per the USGS GeoJSON schema, `properties.tsunami`):
+ *   1  -> true   the source flags this event as a tsunami
+ *   0  -> false  the source explicitly flags it as not a tsunami
+ *   absent / null / any other value -> null  (unknown, NOT false)
+ *
+ * Deliberately absent: any magnitude-based inference. USGS tsunami flags are
+ * assigned from oceanographic modelling and are independent of magnitude — in
+ * the live all-month feed, 8 of the 10 events flagged `tsunami: 1` are below
+ * magnitude 6.0. A `magnitude >= 6` heuristic both misses real tsunami flags
+ * and invents them for large non-tsunami events.
+ */
+export function normalizeTsunamiFlag(value: unknown): boolean | null {
+  if (value === 1) return true;
+  if (value === 0) return false;
+  // Accept the numeric-string serialisation USGS occasionally emits.
+  if (value === '1') return true;
+  if (value === '0') return false;
+  return null;
+}
+
+/** Return a trimmed non-empty string, or null. */
+export function validateText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 /** Return the value only if it is a finite number inside the given range. */
 export function validateNumber(
   value: unknown,

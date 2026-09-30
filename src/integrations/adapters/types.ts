@@ -100,6 +100,73 @@ export interface AdapterResult<T> {
   error: SourceError | null;
 }
 
+/**
+ * One earthquake from the USGS Earthquake Hazards Program GeoJSON feed.
+ *
+ * Provenance — every field is read directly from the feed's own fields:
+ *   id          <- feature.id
+ *   magnitude   <- properties.mag
+ *   place       <- properties.place
+ *   occurredAt  <- properties.time      (epoch ms -> ISO)
+ *   updatedAt   <- properties.updated   (epoch ms -> ISO)
+ *   longitude   <- geometry.coordinates[0]
+ *   latitude    <- geometry.coordinates[1]
+ *   depthKm     <- geometry.coordinates[2]
+ *   tsunami     <- properties.tsunami   (see normalizeTsunamiFlag)
+ *   alert       <- properties.alert     (USGS PAGER level: green/yellow/orange/red)
+ *   reviewStatus<- properties.status     (automatic / reviewed)
+ *   eventType   <- properties.type       (earthquake, quarry blast, ice quake...)
+ *   eventUrl    <- properties.url        (USGS event page)
+ *   source, status, fetchedAt, error    <- adapter-level provenance
+ *
+ * Every field is `number | string | null`. `null` means "the source did not
+ * publish a usable value". It is never replaced by 0, false or ''.
+ */
+export interface NormalizedEarthquake {
+  id: string;
+  magnitude: number | null;
+  place: string | null;
+  occurredAt: string | null;
+  updatedAt: string | null;
+  longitude: number;
+  latitude: number;
+  depthKm: number | null;
+  tsunami: boolean | null;
+  alert: string | null;
+  reviewStatus: string | null;
+  eventType: string | null;
+  eventUrl: string | null;
+
+  source: SourceMetadata;
+  status: SourceStatus;
+  fetchedAt: string | null;
+  error: SourceError | null;
+}
+
+/**
+ * Result of reading the USGS feed.
+ *
+ * `events` holds only events that passed the region filter, newest first.
+ *
+ * A feed that parsed successfully but contains no matching events is a VALID
+ * reading, not a failure: `status` stays `live` with `events: []`. Reporting
+ * "no earthquakes" as `unavailable` would falsely imply the source broke.
+ */
+export interface NormalizedEarthquakeFeed {
+  events: NormalizedEarthquake[];
+  /** Events in the feed before regional filtering, for transparency. */
+  totalInFeed: number;
+  /** Events dropped because they were structurally invalid. */
+  rejectedCount: number;
+  /** USGS `metadata.generated`, ISO-8601 — when the feed was generated. */
+  feedGeneratedAt: string | null;
+
+  source: SourceMetadata;
+  status: SourceStatus;
+  fetchedAt: string | null;
+  error: SourceError | null;
+}
+
 export interface Coordinates {
   latitude: number;
   longitude: number;

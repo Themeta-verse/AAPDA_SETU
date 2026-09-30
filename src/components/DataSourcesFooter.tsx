@@ -33,7 +33,7 @@ export function DataSourcesFooter({ language, fetchedAt, status }: DataSourcesFo
   const sources = [
     { name: 'Open-Meteo', desc: 'Weather & Forecast', icon: Cloud, connected: true },
     { name: 'Open-Meteo Marine', desc: 'Wave Height', icon: Waves, connected: true },
-    { name: 'USGS', desc: 'Earthquake Feed', icon: Activity, connected: true },
+    { name: 'USGS', desc: 'Earthquake Hazards Program', icon: Activity, connected: true },
     // Not yet integrated. Listed as pending so the dashboard does not imply
     // an authority we are not actually reading.
     { name: 'INCOIS', desc: 'Not integrated', icon: Globe, connected: false },

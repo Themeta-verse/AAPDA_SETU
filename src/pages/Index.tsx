@@ -26,7 +26,7 @@ import { LogOut, User } from 'lucide-react';
 
 const Index = () => {
   const [language, setLanguage] = useState<Language>('en');
-  const { data, alerts, clock, marine, earthquakes, tsunamiRisk, sourceStatus } = useMonitoring(8000);
+  const { data, alerts, clock, marine, earthquakes, sourceStatus } = useMonitoring(8000);
   const { user, signOut } = useAuth();
   const alertsRef = useRef<HTMLDivElement>(null);
   const [activeScenario, setActiveScenario] = useState<ScenarioType>(null);

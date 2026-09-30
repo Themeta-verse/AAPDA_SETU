@@ -28,11 +28,22 @@ function currentStatus(marine: { fetchedAt: string | null; waveHeight: number | 
 
 export function useMonitoring(intervalMs = 10000) {
   const { marine } = useWeatherData();
-  const { earthquakes, tsunamiRisk } = useEarthquakeData(300000);
+  const earthquakes = useEarthquakeData(300000);
 
   const [data, setData] = useState<MonitoringData>(() => emptyMonitoringData());
   const [alerts, setAlerts] = useState<AlertInfo[]>([]);
   const [clock, setClock] = useState(new Date());
+
+  /**
+   * The risk engine keeps its existing `tsunamiRisk: boolean` parameter, so a
+   * USGS-flagged tsunami (`tsunami === true`) raises it exactly as before.
+   *
+   * A tri-state `null` — source unreadable, or a matched event with no usable
+   * flag — deliberately does NOT become `true`. It also does not become
+   * `false` here: the hook exposes the null unchanged so the UI can state that
+   * the tsunami signal is unknown rather than showing an all-clear.
+   */
+  const tsunamiRisk = earthquakes.tsunamiFlag === true;
 
   const refresh = useCallback(() => {
     const status = currentStatus(marine);
@@ -61,5 +72,15 @@ export function useMonitoring(intervalMs = 10000) {
   const sourceStatus = data.status;
   const hasData = hasMeasurements(data);
 
-  return { data, alerts, clock, refresh, marine, earthquakes, tsunamiRisk, sourceStatus, hasData };
+  return {
+    data,
+    alerts,
+    clock,
+    refresh,
+    marine,
+    earthquakes,
+    tsunamiRisk,
+    sourceStatus,
+    hasData,
+  };
 }

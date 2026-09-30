@@ -1,59 +1,43 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+  emptyEarthquakeReading,
+  buildUsgsFeedUrl,
+  fetchEarthquakeFeed,
+  resolveTsunamiFlag,
+} from '@/integrations/adapters/usgsEarthquake';
+import { resolveFreshness } from '@/integrations/adapters/freshness';
+import type { NormalizedEarthquake, NormalizedEarthquakeFeed } from '@/integrations/adapters/types';
 
-export interface EarthquakeEvent {
-  id: string;
-  magnitude: number;
-  place: string;
-  time: number;
-  latitude: number;
-  longitude: number;
-  tsunamiFlag: number;
+/**
+ * Lifecycle and state only. Transport, validation and normalisation all live
+ * in the USGS adapter.
+ */
+export interface EarthquakeState {
+  events: NormalizedEarthquake[];
+  /** Tri-state: true / false / null when the source cannot support a claim. */
+  tsunamiFlag: boolean | null;
+  /** Freshness of the earthquake source, recomputed on every render tick. */
+  status: NormalizedEarthquakeFeed['status'];
+  /** Timestamp of the last successfully parsed feed, ISO-8601. */
+  fetchedAt: string | null;
+  /** Timestamp USGS generated this feed, ISO-8601. */
+  feedGeneratedAt: string | null;
+  source: NormalizedEarthquakeFeed['source'];
+  totalInFeed: number;
+  error: NormalizedEarthquakeFeed['error'];
+  refetch: () => void;
 }
 
-// Indian Ocean bounding box (rough)
-const IO_LAT_MIN = -10;
-const IO_LAT_MAX = 25;
-const IO_LON_MIN = 40;
-const IO_LON_MAX = 100;
+export type { NormalizedEarthquake, NormalizedEarthquakeFeed };
 
-function isIndianOceanRegion(lat: number, lon: number) {
-  return lat >= IO_LAT_MIN && lat <= IO_LAT_MAX && lon >= IO_LON_MIN && lon <= IO_LON_MAX;
-}
-
-export function useEarthquakeData(intervalMs = 300000) {
-  const [earthquakes, setEarthquakes] = useState<EarthquakeEvent[]>([]);
-  const [tsunamiRisk, setTsunamiRisk] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useEarthquakeData(intervalMs = 300000): EarthquakeState {
+  const [feed, setFeed] = useState<NormalizedEarthquakeFeed>(() =>
+    emptyEarthquakeReading(buildUsgsFeedUrl('all_day'))
+  );
 
   const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch(
-        'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'
-      );
-      const data = await res.json();
-
-      const relevant: EarthquakeEvent[] = (data.features || [])
-        .filter((f: any) => {
-          const [lon, lat] = f.geometry.coordinates;
-          return isIndianOceanRegion(lat, lon);
-        })
-        .map((f: any) => ({
-          id: f.id,
-          magnitude: f.properties.mag,
-          place: f.properties.place,
-          time: f.properties.time,
-          latitude: f.geometry.coordinates[1],
-          longitude: f.geometry.coordinates[0],
-          tsunamiFlag: f.properties.tsunami,
-        }));
-
-      setEarthquakes(relevant);
-      setTsunamiRisk(relevant.some((e) => e.magnitude >= 6.0));
-      setError(null);
-    } catch (err) {
-      console.warn('USGS earthquake fetch failed:', err);
-      setError('Unable to fetch earthquake data');
-    }
+    const next = await fetchEarthquakeFeed({ window: 'all_day', regionOnly: true });
+    setFeed(next);
   }, []);
 
   useEffect(() => {
@@ -62,5 +46,21 @@ export function useEarthquakeData(intervalMs = 300000) {
     return () => clearInterval(id);
   }, [fetchData, intervalMs]);
 
-  return { earthquakes, tsunamiRisk, error, refetch: fetchData };
+  // A retained reading must age. The adapter stamps freshness at fetch time;
+  // re-deriving here means a quiet tab stops claiming "live" once the reading
+  // passes the shared staleness window.
+  const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
+  const status = resolveFreshness(feed.fetchedAt, feed.fetchedAt !== null, new Date(), isOnline);
+
+  return {
+    events: feed.events,
+    tsunamiFlag: resolveTsunamiFlag({ ...feed, status }),
+    status,
+    fetchedAt: feed.fetchedAt,
+    feedGeneratedAt: feed.feedGeneratedAt,
+    source: feed.source,
+    totalInFeed: feed.totalInFeed,
+    error: feed.error,
+    refetch: fetchData,
+  };
 }
