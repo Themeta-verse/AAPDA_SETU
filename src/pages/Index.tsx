@@ -22,6 +22,7 @@ import { EmergencyBroadcastBanner } from '@/components/EmergencyBroadcastBanner'
 import { LocationTracker } from '@/components/LocationTracker';
 import { CitizenReporting } from '@/components/CitizenReporting';
 import { IncidentIntelligence } from '@/components/IncidentIntelligence';
+import { CoastalCommandCenter } from '@/components/CoastalCommandCenter';
 import { DataSourcesFooter } from '@/components/DataSourcesFooter';
 import { LogOut, User } from 'lucide-react';
 
@@ -101,6 +102,9 @@ const Index = () => {
         isSimulation={!!activeScenario}
         sourceStatus={sourceStatus}
       />
+
+      {/* Coastal Risk Intelligence: the primary operational view. */}
+      <CoastalCommandCenter language={language} />
 
       <MonitoringDashboard data={activeData} language={language} clock={clock} marine={marine} earthquakes={earthquakes} />
 
