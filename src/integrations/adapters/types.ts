@@ -17,7 +17,12 @@ export type SourceStatus = 'live' | 'stale' | 'unavailable' | 'offline';
 export type SourceId =
   | 'open-meteo-marine'
   | 'open-meteo-weather'
-  | 'usgs-earthquakes';
+  | 'usgs-earthquakes'
+  | 'imd-marine-forecast'
+  | 'imd-sea-area-bulletin'
+  | 'incois-ocean-state'
+  | 'incois-tsunami'
+  | 'incois-high-wave';
 
 export type SourceErrorKind =
   /** The request never reached the source (DNS, TLS, CORS, offline). */
@@ -179,4 +184,131 @@ export interface AdapterDeps {
   now?: () => Date;
   /** Connectivity probe; injectable for the same reason. */
   isOnline?: () => boolean;
+}
+
+// =====================================================================
+// OFFICIAL WARNINGS
+// =====================================================================
+
+/**
+ * Why an official-warning source cannot be read by this application.
+ *
+ * These are factual statements about the source's access model, discovered by
+ * inspecting the live response, not placeholder copy. Each is recorded so the
+ * UI can explain WHY an official warning is absent instead of implying that no
+ * warning exists.
+ */
+export type WarningAccessBlocker =
+  /** The response carries no `Access-Control-Allow-Origin` the app may use. */
+  | 'cors-denied'
+  /** The response allows CORS only for an origin this app is not served from. */
+  | 'cors-origin-restricted'
+  /** Reachable and CORS-permitted, but the body is HTML with no parseable data. */
+  | 'no-machine-readable-feed'
+  /** The endpoint requires a credential or service-role call we do not hold. */
+  | 'requires-authentication';
+
+/** The official agencies whose bulletins this platform would consume. */
+export type OfficialWarningAuthority = 'IMD' | 'INCOIS' | 'USGS';
+
+/**
+ * One official warning product's availability.
+ *
+ * IMPORTANT: `active` is tri-state on purpose.
+ *   - `true`  — we read the source and it reports an active warning.
+ *   - `false` — we read the source and it reports NO active warning.
+ *   - `null`  — we could NOT read the source, so we do not know.
+ *
+ * Collapsing `null` into `false` is the single most dangerous failure this
+ * application could make: it would display "no official warning" while a real
+ * hazard bulletin was in force and we simply could not fetch it.
+ */
+export interface OfficialWarningStatus {
+  authority: OfficialWarningAuthority;
+  /** Stable key for the specific product (e.g. `INCOIS_TSUNAMI`). */
+  productId: string;
+  label: string;
+  /** The exact URL inspected. */
+  url: string;
+  /** Null only when we genuinely read the source and it was clear. */
+  active: boolean | null;
+  /** ISO-8601 issue time published by the authority, when known. */
+  issuedAt: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  /** Verbatim headline text from the authority, when one was published. */
+  headline: string | null;
+  /** Geographic scope exactly as the authority stated it. */
+  affectedArea: string | null;
+  /** When this reading was taken. */
+  retrievedAt: string | null;
+  /** Freshness of the reading itself. */
+  status: SourceStatus;
+  /** Set when we could not establish `active`. */
+  blocker: WarningAccessBlocker | null;
+  /** Exact reason, recorded verbatim for the provenance panel. */
+  blockerDetail: string | null;
+  /** HTTP status observed when the blocker was determined. */
+  httpStatus: number | null;
+  /** Response content type observed, used to justify `no-machine-readable-feed`. */
+  contentType: string | null;
+}
+
+/**
+ * Full provenance for any value shown to an operator.
+ *
+ * `limitations` is required (it may be an empty array) so no value can be
+ * displayed without someone having stated what it does not tell us.
+ */
+export interface Provenance {
+  sourceId: SourceId;
+  sourceName: string;
+  /** Clickable link to the exact resource that was read. */
+  url: string;
+  authority: OfficialWarningAuthority | 'Open-Meteo';
+  /** Time the authority published the underlying observation/forecast. */
+  issuedAt: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  /** Time this application fetched it. */
+  retrievedAt: string | null;
+  status: SourceStatus;
+  /** Names of the exact fields consumed to produce the displayed value. */
+  fieldsUsed: string[];
+  /** Stated honestly: what this reading cannot tell us. */
+  limitations: string[];
+}
+
+// =====================================================================
+// DATA QUALITY
+// =====================================================================
+
+/**
+ * How much the data can support.
+ *
+ * This is EVIDENCE-based, never a confidence percentage. It is derived from
+ * the source's own timestamps, the freshness window, and the count of records
+ * or fields that failed validation.
+ */
+export type DataQualityState =
+  | 'CURRENT'
+  | 'STALE'
+  | 'DEGRADED'
+  | 'UNAVAILABLE'
+  | 'UNKNOWN';
+
+/** Evidence behind a quality verdict. Every field is a real observation. */
+export interface DataQualityEvidence {
+  state: DataQualityState;
+  /** GOOD / LIMITED / INSUFFICIENT — derived from `state`, never invented. */
+  assessment: 'GOOD' | 'LIMITED' | 'INSUFFICIENT';
+  /** Human-readable reasons, each traceable to a concrete measurement. */
+  reasons: string[];
+  sourceStatus: SourceStatus;
+  /** Age of the reading at evaluation time, ms. Null when never fetched. */
+  ageMs: number | null;
+  /** Records that failed validation in the last successful read. */
+  rejectedRecords: number;
+  /** Expected fields that were absent from the payload. */
+  missingFields: string[];
 }
