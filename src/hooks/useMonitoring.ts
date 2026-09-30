@@ -10,14 +10,15 @@ import {
 import { resolveFreshness } from '@/integrations/adapters/freshness';
 import { useWeatherData } from './useWeatherData';
 import { useEarthquakeData } from './useEarthquakeData';
+import { useNetworkStatus } from './useNetworkStatus';
+import { loadFromCache, saveToCache, CACHE_KEYS } from '@/lib/offlineCache';
 
 /**
  * Re-derive freshness from the reading's own `fetchedAt` against the current
  * clock. The adapter stamps freshness at fetch time; this keeps a retained
  * reading from staying "live" while the tab sits open without refetching.
  */
-function currentStatus(marine: { fetchedAt: string | null; waveHeight: number | null }): MonitoringData['status'] {
-  const isOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
+function currentStatus(marine: { fetchedAt: string | null; waveHeight: number | null }, isOnline: boolean): MonitoringData['status'] {
   return resolveFreshness(
     marine.fetchedAt,
     marine.waveHeight !== null,
@@ -27,12 +28,23 @@ function currentStatus(marine: { fetchedAt: string | null; waveHeight: number | 
 }
 
 export function useMonitoring(intervalMs = 10000) {
-  const { marine } = useWeatherData();
-  const earthquakes = useEarthquakeData(300000);
+  const { marine, weather, marineHourly } = useWeatherData(300000);
+  const { earthquakes, tsunamiFlag } = useEarthquakeData(300000);
+  const { isOnline } = useNetworkStatus();
 
-  const [data, setData] = useState<MonitoringData>(() => emptyMonitoringData());
-  const [alerts, setAlerts] = useState<AlertInfo[]>([]);
+  const [data, setData] = useState<MonitoringData>(() => {
+    const cached = loadFromCache<MonitoringData>(CACHE_KEYS.MONITORING_DATA);
+    if (cached) {
+      return { ...cached.data, isLive: false };
+    }
+    return emptyMonitoringData();
+  });
+  const [alerts, setAlerts] = useState<AlertInfo[]>(() => {
+    const cached = loadFromCache<AlertInfo[]>(CACHE_KEYS.ALERTS);
+    return cached?.data ?? [];
+  });
   const [clock, setClock] = useState(new Date());
+  const [sourceStatus, setSourceStatus] = useState<MonitoringData['status']>('unavailable');
 
   /**
    * The risk engine keeps its existing `tsunamiRisk: boolean` parameter, so a
@@ -43,20 +55,50 @@ export function useMonitoring(intervalMs = 10000) {
    * `false` here: the hook exposes the null unchanged so the UI can state that
    * the tsunami signal is unknown rather than showing an all-clear.
    */
-  const tsunamiRisk = earthquakes.tsunamiFlag === true;
+  const tsunamiRisk = tsunamiFlag === true;
 
   const refresh = useCallback(() => {
-    const status = currentStatus(marine);
-    const next = deriveMonitoringData(
-      marine.waveHeight,
-      marine.windSpeed,
-      marine.rainProbability,
-      status,
-      tsunamiRisk
-    );
-    setData(next);
-    setAlerts(getAlerts(next, tsunamiRisk));
-  }, [marine, tsunamiRisk]);
+    let newData: MonitoringData;
+    let newAlerts: AlertInfo[];
+
+    if (weather.isLive) {
+      const status = currentStatus(marine, isOnline);
+      newData = deriveMonitoringData(
+        marine.waveHeight,
+        marine.windSpeed,
+        marine.rainProbability,
+        status,
+        tsunamiRisk
+      );
+      newAlerts = getAlerts(newData, tsunamiRisk);
+      setSourceStatus('live');
+
+      saveToCache(CACHE_KEYS.MONITORING_DATA, newData, 'Open-Meteo');
+      saveToCache(CACHE_KEYS.ALERTS, newAlerts, 'Open-Meteo');
+    } else {
+      if (isOnline) {
+        newData = emptyMonitoringData();
+        newAlerts = getAlerts(newData, tsunamiRisk);
+        setSourceStatus('unavailable');
+      } else {
+        const cachedData = loadFromCache<MonitoringData>(CACHE_KEYS.MONITORING_DATA);
+        const cachedAlerts = loadFromCache<AlertInfo[]>(CACHE_KEYS.ALERTS);
+
+        if (cachedData) {
+          newData = { ...cachedData.data, isLive: false };
+          newAlerts = cachedAlerts?.data ?? getAlerts(newData, tsunamiRisk);
+          setSourceStatus('stale');
+        } else {
+          newData = emptyMonitoringData();
+          newAlerts = getAlerts(newData, tsunamiRisk);
+          setSourceStatus('offline');
+        }
+      }
+    }
+
+    setData(newData);
+    setAlerts(newAlerts);
+  }, [weather, marine, isOnline, tsunamiRisk]);
 
   useEffect(() => {
     refresh();
@@ -69,7 +111,6 @@ export function useMonitoring(intervalMs = 10000) {
     return () => clearInterval(id);
   }, []);
 
-  const sourceStatus = data.status;
   const hasData = hasMeasurements(data);
 
   return {
@@ -77,7 +118,9 @@ export function useMonitoring(intervalMs = 10000) {
     alerts,
     clock,
     refresh,
+    weather,
     marine,
+    marineHourly,
     earthquakes,
     tsunamiRisk,
     sourceStatus,

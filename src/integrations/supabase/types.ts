@@ -124,12 +124,153 @@ export type Database = {
         }
         Relationships: []
       }
+      emergency_contacts: {
+        Row: {
+          created_at: string
+          id: string
+          is_primary: boolean
+          name: string
+          phone: string
+          relationship: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          name: string
+          phone: string
+          relationship?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          name?: string
+          phone?: string
+          relationship?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      risk_zones: {
+        Row: {
+          alert_threshold_km: number
+          center_lat: number
+          center_lon: number
+          created_at: string
+          event_types: string[]
+          id: string
+          is_active: boolean
+          name: string
+          radius_km: number
+          severity_threshold: string
+          updated_at: string
+        }
+        Insert: {
+          alert_threshold_km?: number
+          center_lat: number
+          center_lon: number
+          created_at?: string
+          event_types?: string[]
+          id?: string
+          is_active?: boolean
+          name: string
+          radius_km?: number
+          severity_threshold?: string
+          updated_at?: string
+        }
+        Update: {
+          alert_threshold_km?: number
+          center_lat?: number
+          center_lon?: number
+          created_at?: string
+          event_types?: string[]
+          id?: string
+          is_active?: boolean
+          name?: string
+          radius_km?: number
+          severity_threshold?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sms_alert_log: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          message: string
+          provider_response: Json | null
+          recipients: Json
+          severity: string
+          sent_at: string
+          status: string
+          user_id: string
+          zone_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          message?: string
+          provider_response?: Json | null
+          recipients?: Json
+          severity: string
+          sent_at?: string
+          status?: string
+          user_id: string
+          zone_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          message?: string
+          provider_response?: Json | null
+          recipients?: Json
+          severity?: string
+          sent_at?: string
+          status?: string
+          user_id?: string
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_alert_log_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "risk_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_alert_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      should_send_alert: {
+        Args: {
+          p_cooldown_minutes?: number
+          p_event_type: string
+          p_severity: string
+          p_user_id: string
+          p_zone_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
