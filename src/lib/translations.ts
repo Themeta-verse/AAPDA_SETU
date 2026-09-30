@@ -1,0 +1,590 @@
+export type Language = 'en' | 'hi' | 'mr' | 'gu';
+
+export const languageNames: Record<Language, string> = {
+  en: 'English',
+  hi: 'हिन्दी',
+  mr: 'मराठी',
+  gu: 'ગુજરાતી',
+};
+
+export const translations: Record<Language, Record<string, string>> = {
+  en: {
+    title: 'BayWatch',
+    subtitle: 'Juhu Coastal Disaster Alert System',
+    tagline: 'Real-time coastal monitoring and multilingual emergency guidance for Juhu Beach, Mumbai.',
+    viewAlerts: 'View Current Alerts',
+    startMockDrill: 'Start Mock Drill',
+    currentStatus: 'Current Status',
+    location: 'Location',
+    tideLevel: 'Tide Level',
+    windSpeed: 'Wind Speed',
+    rainProbability: 'Rain Probability',
+    seaCondition: 'Sea Condition',
+    riskLevel: 'Risk Level',
+    safe: 'Safe',
+    moderate: 'Moderate Risk',
+    high: 'High Risk',
+    critical: 'Critical Alert',
+    calm: 'Calm',
+    rough: 'Rough',
+    veryRough: 'Very Rough',
+    highTideWarning: 'High Tide Warning',
+    highTideDesc: 'High tide approaching. Please move away from the shoreline.',
+    tsunamiRisk: 'Tsunami Risk',
+    tsunamiDesc: 'Potential tsunami activity detected. Move to higher ground immediately.',
+    coastalFlood: 'Coastal Flood Alert',
+    coastalFloodDesc: 'Heavy rainfall may cause coastal flooding. Avoid low-lying areas.',
+    heavyRain: 'Heavy Rain Warning',
+    heavyRainDesc: 'Heavy rainfall expected. Exercise caution near water bodies.',
+    stormWarning: 'Storm Warning',
+    stormWarningDesc: 'High wind speeds detected. Stay indoors and away from the coast.',
+    emergencyContacts: 'Emergency Contacts',
+    police: 'Police',
+    ambulance: 'Ambulance',
+    disasterHelpline: 'Disaster Helpline',
+    evacuationMap: 'Evacuation Map',
+    evacuationDesc: 'Follow marked routes to reach safe zones',
+    playVoiceAlert: 'Play Voice Alert',
+    stopVoiceAlert: 'Stop Alert',
+    mockDrillTitle: 'Disaster Mock Drill',
+    mockDrillDesc: 'Practice emergency response procedures to build preparedness',
+    step: 'Step',
+    guidanceTitle: 'Emergency Guidance',
+    touristMode: 'Tourist Safety Mode',
+    touristDesc: 'Simplified safety instructions for visitors unfamiliar with the area',
+    monitoring: 'Real-Time Monitoring Dashboard',
+    alerts: 'Active Alerts',
+    guidance: 'Guidance',
+    evacuation: 'Evacuation',
+    chatbotTitle: 'BayWatch Assistant',
+    chatbotPlaceholder: 'Ask about beach safety...',
+    juhuBeach: 'Juhu Beach, Mumbai',
+    systemActive: 'System Active',
+    liveMonitoring: 'Live Monitoring',
+    monitoringMode: 'Monitoring Mode',
+    alertIssued: 'Alert Issued',
+    lastUpdated: 'Last Updated',
+    // Guidance steps
+    step1: 'Move away from the shoreline immediately',
+    step2: 'Follow marked evacuation routes',
+    step3: 'Move toward higher ground',
+    step4: 'Listen to lifeguards or authorities',
+    step5: 'Avoid coastal roads and water entry',
+    // Mock drill
+    drillScenario: 'Tsunami warning issued near Juhu Beach.',
+    drillStep1: 'Alert received — Tsunami warning for Juhu Beach',
+    drillStep2: 'Move away from the shoreline immediately',
+    drillStep3: 'Follow evacuation route markers to higher ground',
+    drillStep4: 'Reach designated safe zone',
+    drillStep5: 'Wait for all-clear announcement from authorities',
+    drillComplete: 'Mock Drill Complete! You have successfully practiced the evacuation procedure.',
+    nextStep: 'Next Step',
+    restartDrill: 'Restart Drill',
+    // Risk Legend
+    riskLegend: 'Risk Level Legend',
+    riskSafeDesc: 'Conditions are normal. Beach is safe for activities.',
+    riskModerateDesc: 'Elevated conditions. Exercise caution near the water.',
+    riskCriticalDesc: 'Dangerous conditions. Evacuate the beach area immediately.',
+    // Government Guidelines
+    govGuidelines: 'Government Safety Guidelines',
+    govGuidelinesDesc: 'Official NDMA-recommended safety practices',
+    govTip1: 'Avoid entering the sea during high tide alerts',
+    govTip2: 'Follow instructions from lifeguards and authorities at all times',
+    govTip3: 'Move to higher ground immediately during tsunami warnings',
+    govTip4: 'Avoid flooded coastal roads and low-lying areas',
+    govTip5: 'Keep emergency contacts saved on your phone',
+    govTip6: 'Stay tuned to official disaster management channels',
+    // Scenario Simulation
+    scenarioTitle: 'Scenario Simulation',
+    scenarioDesc: 'Test the system by simulating different disaster scenarios',
+    simulateHighTide: 'Simulate High Tide',
+    simulateTsunami: 'Simulate Tsunami',
+    simulateFlood: 'Simulate Coastal Flood',
+    resetScenario: 'Reset to Normal',
+    scenarioActive: 'Simulation Active',
+    // Chatbot quick buttons
+    quickBeachSafe: 'Is the beach safe?',
+    quickTsunami: 'What to do during tsunami?',
+    quickEvacuation: 'Show evacuation routes',
+    quickEmergency: 'Emergency numbers',
+    // Mobile alert
+    mobileAlertTitle: 'EMERGENCY ALERT',
+    mobileAlertAction: 'View Safety Instructions',
+    dismissAlert: 'Dismiss',
+    // Voice Alert Guide
+    voiceGuideTitle: 'Voice Alert Guide',
+    voiceGuideDesc: 'Tap any alert to hear multilingual voice guidance from the BayWatch Bot',
+    voiceGuideBotName: 'BayWatch Voice Bot',
+    voiceGuideSpeaking: 'Speaking...',
+    voiceGuideReady: 'Ready to guide',
+    // Tide Forecast
+    tideForecastTitle: '24-Hour Tide Forecast',
+    tideForecastDesc: 'Predicted tide levels and risk windows for the next 24 hours',
+    tideForecastHigh: 'Peak High',
+    tideForecastLow: 'Peak Low',
+    tideForecastAvg: 'Average',
+  },
+  hi: {
+    title: 'बेवॉच',
+    subtitle: 'जुहू तटीय आपदा चेतावनी प्रणाली',
+    tagline: 'जुहू बीच, मुंबई के लिए वास्तविक समय तटीय निगरानी और बहुभाषी आपातकालीन मार्गदर्शन।',
+    viewAlerts: 'वर्तमान अलर्ट देखें',
+    startMockDrill: 'मॉक ड्रिल शुरू करें',
+    currentStatus: 'वर्तमान स्थिति',
+    location: 'स्थान',
+    tideLevel: 'ज्वार स्तर',
+    windSpeed: 'हवा की गति',
+    rainProbability: 'बारिश की संभावना',
+    seaCondition: 'समुद्र की स्थिति',
+    riskLevel: 'जोखिम स्तर',
+    safe: 'सुरक्षित',
+    moderate: 'मध्यम जोखिम',
+    high: 'उच्च जोखिम',
+    critical: 'गंभीर चेतावनी',
+    calm: 'शांत',
+    rough: 'उग्र',
+    veryRough: 'बहुत उग्र',
+    highTideWarning: 'उच्च ज्वार चेतावनी',
+    highTideDesc: 'उच्च ज्वार आने वाला है। कृपया समुद्र तट से दूर जाएं।',
+    tsunamiRisk: 'सुनामी का खतरा',
+    tsunamiDesc: 'संभावित सुनामी गतिविधि का पता चला। तुरंत ऊंचे स्थान पर जाएं।',
+    coastalFlood: 'तटीय बाढ़ चेतावनी',
+    coastalFloodDesc: 'भारी बारिश से तटीय बाढ़ आ सकती है। निचले इलाकों से बचें।',
+    heavyRain: 'भारी बारिश की चेतावनी',
+    heavyRainDesc: 'भारी बारिश की उम्मीद है। जल निकायों के पास सावधानी बरतें।',
+    stormWarning: 'तूफान चेतावनी',
+    stormWarningDesc: 'तेज हवा की गति का पता चला। घर के अंदर रहें और तट से दूर रहें।',
+    emergencyContacts: 'आपातकालीन संपर्क',
+    police: 'पुलिस',
+    ambulance: 'एम्बुलेंस',
+    disasterHelpline: 'आपदा हेल्पलाइन',
+    evacuationMap: 'निकासी मानचित्र',
+    evacuationDesc: 'सुरक्षित क्षेत्रों तक पहुंचने के लिए चिन्हित मार्गों का अनुसरण करें',
+    playVoiceAlert: 'ध्वनि चेतावनी चलाएं',
+    stopVoiceAlert: 'चेतावनी बंद करें',
+    mockDrillTitle: 'आपदा मॉक ड्रिल',
+    mockDrillDesc: 'आपातकालीन प्रतिक्रिया प्रक्रियाओं का अभ्यास करें',
+    step: 'चरण',
+    guidanceTitle: 'आपातकालीन मार्गदर्शन',
+    touristMode: 'पर्यटक सुरक्षा मोड',
+    touristDesc: 'आगंतुकों के लिए सरलीकृत सुरक्षा निर्देश',
+    monitoring: 'रियल-टाइम निगरानी डैशबोर्ड',
+    alerts: 'सक्रिय चेतावनी',
+    guidance: 'मार्गदर्शन',
+    evacuation: 'निकासी',
+    chatbotTitle: 'बेवॉच सहायक',
+    chatbotPlaceholder: 'समुद्र तट सुरक्षा के बारे में पूछें...',
+    juhuBeach: 'जुहू बीच, मुंबई',
+    systemActive: 'सिस्टम सक्रिय',
+    liveMonitoring: 'लाइव निगरानी',
+    monitoringMode: 'निगरानी मोड',
+    alertIssued: 'चेतावनी जारी',
+    lastUpdated: 'अंतिम अपडेट',
+    step1: 'तुरंत समुद्र तट से दूर जाएं',
+    step2: 'चिन्हित निकासी मार्गों का अनुसरण करें',
+    step3: 'ऊंचे स्थान की ओर बढ़ें',
+    step4: 'लाइफगार्ड या अधिकारियों की बात सुनें',
+    step5: 'तटीय सड़कों और पानी में प्रवेश से बचें',
+    drillScenario: 'जुहू बीच के पास सुनामी चेतावनी जारी।',
+    drillStep1: 'अलर्ट प्राप्त — जुहू बीच के लिए सुनामी चेतावनी',
+    drillStep2: 'तुरंत समुद्र तट से दूर जाएं',
+    drillStep3: 'ऊंचे स्थान के लिए निकासी मार्ग चिन्हों का अनुसरण करें',
+    drillStep4: 'निर्दिष्ट सुरक्षित क्षेत्र में पहुंचें',
+    drillStep5: 'अधिकारियों से सब ठीक होने की घोषणा की प्रतीक्षा करें',
+    drillComplete: 'मॉक ड्रिल पूर्ण! आपने निकासी प्रक्रिया का सफलतापूर्वक अभ्यास किया है।',
+    nextStep: 'अगला चरण',
+    restartDrill: 'ड्रिल पुनः शुरू करें',
+    riskLegend: 'जोखिम स्तर चार्ट',
+    riskSafeDesc: 'स्थिति सामान्य है। समुद्र तट सुरक्षित है।',
+    riskModerateDesc: 'बढ़ी हुई स्थिति। पानी के पास सावधानी बरतें।',
+    riskCriticalDesc: 'खतरनाक स्थिति। तुरंत बीच क्षेत्र खाली करें।',
+    govGuidelines: 'सरकारी सुरक्षा दिशानिर्देश',
+    govGuidelinesDesc: 'आधिकारिक NDMA-अनुशंसित सुरक्षा प्रथाएं',
+    govTip1: 'उच्च ज्वार चेतावनी के दौरान समुद्र में प्रवेश न करें',
+    govTip2: 'हमेशा लाइफगार्ड और अधिकारियों के निर्देशों का पालन करें',
+    govTip3: 'सुनामी चेतावनी के दौरान तुरंत ऊंचे स्थान पर जाएं',
+    govTip4: 'बाढ़ वाली तटीय सड़कों और निचले इलाकों से बचें',
+    govTip5: 'अपने फोन पर आपातकालीन संपर्क सहेज कर रखें',
+    govTip6: 'आधिकारिक आपदा प्रबंधन चैनल से जुड़े रहें',
+    scenarioTitle: 'परिदृश्य सिमुलेशन',
+    scenarioDesc: 'विभिन्न आपदा परिदृश्यों का अनुकरण करके सिस्टम का परीक्षण करें',
+    simulateHighTide: 'उच्च ज्वार अनुकरण',
+    simulateTsunami: 'सुनामी अनुकरण',
+    simulateFlood: 'तटीय बाढ़ अनुकरण',
+    resetScenario: 'सामान्य पर रीसेट',
+    scenarioActive: 'सिमुलेशन सक्रिय',
+    quickBeachSafe: 'क्या बीच सुरक्षित है?',
+    quickTsunami: 'सुनामी में क्या करें?',
+    quickEvacuation: 'निकासी मार्ग दिखाएं',
+    quickEmergency: 'आपातकालीन नंबर',
+    mobileAlertTitle: 'आपातकालीन चेतावनी',
+    mobileAlertAction: 'सुरक्षा निर्देश देखें',
+    dismissAlert: 'खारिज करें',
+    voiceGuideTitle: 'ध्वनि चेतावनी गाइड',
+    voiceGuideDesc: 'बेवॉच बॉट से बहुभाषी ध्वनि मार्गदर्शन सुनने के लिए किसी भी अलर्ट पर टैप करें',
+    voiceGuideBotName: 'बेवॉच वॉइस बॉट',
+    voiceGuideSpeaking: 'बोल रहा है...',
+    voiceGuideReady: 'मार्गदर्शन के लिए तैयार',
+    tideForecastTitle: '24 घंटे ज्वार पूर्वानुमान',
+    tideForecastDesc: 'अगले 24 घंटों के लिए अनुमानित ज्वार स्तर और जोखिम खिड़कियां',
+    tideForecastHigh: 'उच्चतम',
+    tideForecastLow: 'न्यूनतम',
+    tideForecastAvg: 'औसत',
+  },
+  mr: {
+    title: 'बेवॉच',
+    subtitle: 'जुहू किनारपट्टी आपत्ती सतर्कता प्रणाली',
+    tagline: 'जुहू बीच, मुंबईसाठी रिअल-टाइम किनारपट्टी निरीक्षण आणि बहुभाषिक आपत्कालीन मार्गदर्शन.',
+    viewAlerts: 'सध्याचे अलर्ट पहा',
+    startMockDrill: 'मॉक ड्रिल सुरू करा',
+    currentStatus: 'सध्याची स्थिती',
+    location: 'स्थान',
+    tideLevel: 'भरतीची पातळी',
+    windSpeed: 'वाऱ्याचा वेग',
+    rainProbability: 'पावसाची शक्यता',
+    seaCondition: 'समुद्राची स्थिती',
+    riskLevel: 'धोक्याची पातळी',
+    safe: 'सुरक्षित',
+    moderate: 'मध्यम धोका',
+    high: 'उच्च धोका',
+    critical: 'गंभीर सतर्कता',
+    calm: 'शांत',
+    rough: 'खवळलेला',
+    veryRough: 'अत्यंत खवळलेला',
+    highTideWarning: 'उच्च भरती इशारा',
+    highTideDesc: 'उच्च भरती येत आहे. कृपया समुद्रकिनाऱ्यापासून दूर जा.',
+    tsunamiRisk: 'त्सुनामीचा धोका',
+    tsunamiDesc: 'संभाव्य त्सुनामी क्रियाकलाप आढळला. ताबडतोब उंच ठिकाणी जा.',
+    coastalFlood: 'किनारपट्टी पूर अलर्ट',
+    coastalFloodDesc: 'जोरदार पावसामुळे किनारपट्टीला पूर येऊ शकतो. सखल भागांपासून दूर राहा.',
+    heavyRain: 'मुसळधार पाऊस इशारा',
+    heavyRainDesc: 'मुसळधार पावसाची अपेक्षा आहे. जलाशयांजवळ सावधगिरी बाळगा.',
+    stormWarning: 'वादळ इशारा',
+    stormWarningDesc: 'जोरदार वाऱ्याचा वेग आढळला. घरात राहा आणि किनाऱ्यापासून दूर राहा.',
+    emergencyContacts: 'आपत्कालीन संपर्क',
+    police: 'पोलीस',
+    ambulance: 'रुग्णवाहिका',
+    disasterHelpline: 'आपत्ती हेल्पलाइन',
+    evacuationMap: 'निर्वासन नकाशा',
+    evacuationDesc: 'सुरक्षित क्षेत्रांपर्यंत पोहोचण्यासाठी चिन्हांकित मार्गांचे अनुसरण करा',
+    playVoiceAlert: 'ध्वनी अलर्ट वाजवा',
+    stopVoiceAlert: 'अलर्ट थांबवा',
+    mockDrillTitle: 'आपत्ती मॉक ड्रिल',
+    mockDrillDesc: 'आपत्कालीन प्रतिसाद प्रक्रियांचा सराव करा',
+    step: 'पायरी',
+    guidanceTitle: 'आपत्कालीन मार्गदर्शन',
+    touristMode: 'पर्यटक सुरक्षा मोड',
+    touristDesc: 'अभ्यागतांसाठी सोप्या सुरक्षा सूचना',
+    monitoring: 'रिअल-टाइम निरीक्षण डॅशबोर्ड',
+    alerts: 'सक्रिय सतर्कता',
+    guidance: 'मार्गदर्शन',
+    evacuation: 'निर्वासन',
+    chatbotTitle: 'बेवॉच सहाय्यक',
+    chatbotPlaceholder: 'समुद्रकिनाऱ्याच्या सुरक्षिततेबद्दल विचारा...',
+    juhuBeach: 'जुहू बीच, मुंबई',
+    systemActive: 'सिस्टम सक्रिय',
+    liveMonitoring: 'लाइव्ह निरीक्षण',
+    monitoringMode: 'निरीक्षण मोड',
+    alertIssued: 'अलर्ट जारी',
+    lastUpdated: 'शेवटचे अपडेट',
+    step1: 'ताबडतोब समुद्रकिनाऱ्यापासून दूर जा',
+    step2: 'चिन्हांकित निर्वासन मार्गांचे अनुसरण करा',
+    step3: 'उंच ठिकाणाकडे जा',
+    step4: 'जीवरक्षक किंवा अधिकाऱ्यांचे ऐका',
+    step5: 'किनारपट्टी रस्ते आणि पाण्यात प्रवेश टाळा',
+    drillScenario: 'जुहू बीचजवळ त्सुनामी इशारा जारी.',
+    drillStep1: 'अलर्ट प्राप्त — जुहू बीचसाठी त्सुनामी इशारा',
+    drillStep2: 'ताबडतोब समुद्रकिनाऱ्यापासून दूर जा',
+    drillStep3: 'उंच ठिकाणासाठी निर्वासन मार्ग चिन्हांचे अनुसरण करा',
+    drillStep4: 'नियुक्त सुरक्षित क्षेत्रात पोहोचा',
+    drillStep5: 'अधिकाऱ्यांकडून सर्व ठीक असल्याच्या घोषणेची वाट पहा',
+    drillComplete: 'मॉक ड्रिल पूर्ण! तुम्ही निर्वासन प्रक्रियेचा यशस्वीपणे सराव केला आहे.',
+    nextStep: 'पुढची पायरी',
+    restartDrill: 'ड्रिल पुन्हा सुरू करा',
+    riskLegend: 'धोका पातळी चार्ट',
+    riskSafeDesc: 'परिस्थिती सामान्य आहे. किनारा सुरक्षित आहे.',
+    riskModerateDesc: 'वाढलेली परिस्थिती. पाण्याजवळ सावधगिरी बाळगा.',
+    riskCriticalDesc: 'धोकादायक परिस्थिती. ताबडतोब बीच क्षेत्र खाली करा.',
+    govGuidelines: 'सरकारी सुरक्षा मार्गदर्शक तत्त्वे',
+    govGuidelinesDesc: 'अधिकृत NDMA-शिफारस सुरक्षा पद्धती',
+    govTip1: 'उच्च भरती अलर्ट दरम्यान समुद्रात प्रवेश करणे टाळा',
+    govTip2: 'नेहमी जीवरक्षक आणि अधिकाऱ्यांच्या सूचनांचे पालन करा',
+    govTip3: 'त्सुनामी इशाऱ्यादरम्यान ताबडतोब उंच ठिकाणी जा',
+    govTip4: 'पूरग्रस्त किनारपट्टी रस्ते आणि सखल भाग टाळा',
+    govTip5: 'तुमच्या फोनवर आपत्कालीन संपर्क सेव्ह करा',
+    govTip6: 'अधिकृत आपत्ती व्यवस्थापन चॅनेलशी जोडलेले राहा',
+    scenarioTitle: 'परिस्थिती सिम्युलेशन',
+    scenarioDesc: 'विविध आपत्ती परिस्थितींचे अनुकरण करून सिस्टम तपासा',
+    simulateHighTide: 'उच्च भरती सिम्युलेट',
+    simulateTsunami: 'त्सुनामी सिम्युलेट',
+    simulateFlood: 'किनारपट्टी पूर सिम्युलेट',
+    resetScenario: 'सामान्य स्थितीवर रीसेट',
+    scenarioActive: 'सिम्युलेशन सक्रिय',
+    quickBeachSafe: 'किनारा सुरक्षित आहे का?',
+    quickTsunami: 'त्सुनामीत काय करावे?',
+    quickEvacuation: 'निर्वासन मार्ग दाखवा',
+    quickEmergency: 'आपत्कालीन क्रमांक',
+    mobileAlertTitle: 'आपत्कालीन सतर्कता',
+    mobileAlertAction: 'सुरक्षा सूचना पहा',
+    dismissAlert: 'खारिज करा',
+    voiceGuideTitle: 'ध्वनी अलर्ट मार्गदर्शक',
+    voiceGuideDesc: 'बेवॉच बॉटकडून बहुभाषिक ध्वनी मार्गदर्शन ऐकण्यासाठी कोणत्याही अलर्टवर टॅप करा',
+    voiceGuideBotName: 'बेवॉच व्हॉइस बॉट',
+    voiceGuideSpeaking: 'बोलत आहे...',
+    voiceGuideReady: 'मार्गदर्शनासाठी तयार',
+    tideForecastTitle: '२४ तास भरती अंदाज',
+    tideForecastDesc: 'पुढील २४ तासांसाठी अंदाजित भरती पातळी आणि धोक्याच्या खिडक्या',
+    tideForecastHigh: 'उच्चांक',
+    tideForecastLow: 'नीचांक',
+    tideForecastAvg: 'सरासरी',
+  },
+  gu: {
+    title: 'બેવોચ',
+    subtitle: 'જુહુ દરિયાકાંઠા આપત્તિ ચેતવણી સિસ્ટમ',
+    tagline: 'જુહુ બીચ, મુંબઈ માટે રીઅલ-ટાઈમ દરિયાકાંઠા નિરીક્ષણ અને બહુભાષી કટોકટી માર્ગદર્શન.',
+    viewAlerts: 'વર્તમાન ચેતવણીઓ જુઓ',
+    startMockDrill: 'મોક ડ્રિલ શરૂ કરો',
+    currentStatus: 'વર્તમાન સ્થિતિ',
+    location: 'સ્થાન',
+    tideLevel: 'ભરતીનું સ્તર',
+    windSpeed: 'પવનની ઝડપ',
+    rainProbability: 'વરસાદની સંભાવના',
+    seaCondition: 'દરિયાની સ્થિતિ',
+    riskLevel: 'જોખમ સ્તર',
+    safe: 'સુરક્ષિત',
+    moderate: 'મધ્યમ જોખમ',
+    high: 'ઉચ્ચ જોખમ',
+    critical: 'ગંભીર ચેતવણી',
+    calm: 'શાંત',
+    rough: 'ઉગ્ર',
+    veryRough: 'ખૂબ ઉગ્ર',
+    highTideWarning: 'ઉંચો ભરતી ચેતવણી',
+    highTideDesc: 'ઉંચો જ્વાર આવી રહ્યો છે. કૃપા કરીને દરિયાકાંઠેથી દૂર રહો.',
+    tsunamiRisk: 'સુનામી જોખમ',
+    tsunamiDesc: 'સંભવિત સુનામી પ્રવૃત્તિ શોધાઈ. તરત ઊંચા સ્થાને જાઓ.',
+    coastalFlood: 'દરિયાકાંઠા પૂર ચેતવણી',
+    coastalFloodDesc: 'ભારે વરસાદથી દરિયાકાંઠે પૂર આવી શકે છે. નીચા વિસ્તારોથી દૂર રહો.',
+    heavyRain: 'ભારે વરસાદ ચેતવણી',
+    heavyRainDesc: 'ભારે વરસાદની અપેક્ષા છે. જળાશયો પાસે સાવધાની રાખો.',
+    stormWarning: 'તોફાન ચેતવણી',
+    stormWarningDesc: 'ઉચ્ચ પવનની ગતિ મળી. ઘરમાં રહો અને દરિયાકિનારાથી દૂર રહો.',
+    emergencyContacts: 'કટોકટી સંપર્ક',
+    police: 'પોલીસ',
+    ambulance: 'એમ્બ્યુલન્સ',
+    disasterHelpline: 'આપત્તિ હેલ્પલાઈન',
+    evacuationMap: 'ખાલી કરાવવાનો નકશો',
+    evacuationDesc: 'સુરક્ષિત ઝોન સુધી પહોંચવા ચિહ્નિત માર્ગોનું અનુસરણ કરો',
+    playVoiceAlert: 'અવાજ ચેતવણી વગાડો',
+    stopVoiceAlert: 'ચેતવણી બંધ કરો',
+    mockDrillTitle: 'આપત્તિ મોક ડ્રિલ',
+    mockDrillDesc: 'કટોકટી પ્રતિસાદ પ્રક્રિયાઓનો અભ્યાસ કરો',
+    step: 'પગલું',
+    guidanceTitle: 'કટોકટી માર્ગદર્શન',
+    touristMode: 'પર્યટક સુરક્ષા મોડ',
+    touristDesc: 'મુલાકાતીઓ માટે સરળ સુરક્ષા સૂચનાઓ',
+    monitoring: 'રીઅલ-ટાઈમ નિરીક્ષણ ડૅશબોર્ડ',
+    alerts: 'સક્રિય ચેતવણી',
+    guidance: 'માર્ગદર્શન',
+    evacuation: 'ખાલી કરાવવું',
+    chatbotTitle: 'બેવોચ સહાયક',
+    chatbotPlaceholder: 'દરિયાકિનારાની સુરક્ષા વિશે પૂછો...',
+    juhuBeach: 'જુહુ બીચ, મુંબઈ',
+    systemActive: 'સિસ્ટમ સક્રિય',
+    liveMonitoring: 'લાઈવ નિરીક્ષણ',
+    monitoringMode: 'નિરીક્ષણ મોડ',
+    alertIssued: 'ચેતવણી જારી',
+    lastUpdated: 'છેલ્લું અપડેટ',
+    step1: 'તરત દરિયાકાંઠેથી દૂર જાઓ',
+    step2: 'ચિહ્નિત ખાલી કરાવવાના માર્ગોનું અનુસરણ કરો',
+    step3: 'ઊંચા સ્થાન તરફ આગળ વધો',
+    step4: 'લાઈફગાર્ડ અથવા અધિકારીઓને સાંભળો',
+    step5: 'દરિયાકાંઠાના રસ્તા અને પાણીમાં પ્રવેશ ટાળો',
+    drillScenario: 'જુહુ બીચ પાસે સુનામી ચેતવણી જારી.',
+    drillStep1: 'ચેતવણી મળી — જુહુ બીચ માટે સુનામી ચેતવણી',
+    drillStep2: 'તરત દરિયાકાંઠેથી દૂર જાઓ',
+    drillStep3: 'ઊંચા સ્થાન માટે ખાલી કરાવવાના માર્ગ ચિહ્નોનું અનુસરણ કરો',
+    drillStep4: 'નિયુક્ત સુરક્ષિત ઝોનમાં પહોંચો',
+    drillStep5: 'અધિકારીઓ પાસેથી બધું ઠીક છે ની જાહેરાતની રાહ જુઓ',
+    drillComplete: 'મોક ડ્રિલ પૂર્ણ! તમે ખાલી કરાવવાની પ્રક્રિયાનો સફળતાપૂર્વક અભ્યાસ કર્યો છે.',
+    nextStep: 'આગળનું પગલું',
+    restartDrill: 'ડ્રિલ ફરી શરૂ કરો',
+    riskLegend: 'જોખમ સ્તર ચાર્ટ',
+    riskSafeDesc: 'પરિસ્થિતિ સામાન્ય છે. બીચ સુરક્ષિત છે.',
+    riskModerateDesc: 'ઉન્નત પરિસ્થિતિ. પાણી પાસે સાવધાની રાખો.',
+    riskCriticalDesc: 'ખતરનાક પરિસ્થિતિ. તરત બીચ વિસ્તાર ખાલી કરો.',
+    govGuidelines: 'સરકારી સુરક્ષા માર્ગદર્શિકા',
+    govGuidelinesDesc: 'સત્તાવાર NDMA-ભલામણ સુરક્ષા પદ્ધતિઓ',
+    govTip1: 'ઊંચી ભરતી ચેતવણી દરમિયાન દરિયામાં પ્રવેશ ટાળો',
+    govTip2: 'હંમેશા લાઈફગાર્ડ અને અધિકારીઓની સૂચનાઓનું પાલન કરો',
+    govTip3: 'સુનામી ચેતવણી દરમિયાન તરત ઊંચા સ્થાને જાઓ',
+    govTip4: 'પૂરગ્રસ્ત દરિયાકાંઠાના રસ્તા અને નીચા વિસ્તારો ટાળો',
+    govTip5: 'તમારા ફોનમાં કટોકટી સંપર્ક સાચવો',
+    govTip6: 'સત્તાવાર આપત્તિ વ્યવસ્થાપન ચેનલ સાથે જોડાયેલા રહો',
+    scenarioTitle: 'પરિસ્થિતિ સિમ્યુલેશન',
+    scenarioDesc: 'વિવિધ આપત્તિ પરિસ્થિતિઓનું અનુકરણ કરીને સિસ્ટમ તપાસો',
+    simulateHighTide: 'ઊંચી ભરતી સિમ્યુલેટ',
+    simulateTsunami: 'સુનામી સિમ્યુલેટ',
+    simulateFlood: 'દરિયાકાંઠા પૂર સિમ્યુલેટ',
+    resetScenario: 'સામાન્ય પર રીસેટ',
+    scenarioActive: 'સિમ્યુલેશન સક્રિય',
+    quickBeachSafe: 'બીચ સુરક્ષિત છે?',
+    quickTsunami: 'સુનામીમાં શું કરવું?',
+    quickEvacuation: 'ખાલી કરાવવાના માર્ગ બતાવો',
+    quickEmergency: 'કટોકટી નંબર',
+    mobileAlertTitle: 'કટોકટી ચેતવણી',
+    mobileAlertAction: 'સુરક્ષા સૂચનાઓ જુઓ',
+    dismissAlert: 'ખારિજ કરો',
+    voiceGuideTitle: 'અવાજ ચેતવણી માર્ગદર્શિકા',
+    voiceGuideDesc: 'બેવોચ બોટ પાસેથી બહુભાષી અવાજ માર્ગદર્શન સાંભળવા કોઈપણ ચેતવણી પર ટૅપ કરો',
+    voiceGuideBotName: 'બેવોચ વૉઇસ બોટ',
+    voiceGuideSpeaking: 'બોલી રહ્યું છે...',
+    voiceGuideReady: 'માર્ગદર્શન માટે તૈયાર',
+    tideForecastTitle: '૨૪ કલાક ભરતી આગાહી',
+    tideForecastDesc: 'આગામી ૨૪ કલાક માટે અંદાજિત ભરતી સ્તર અને જોખમ વિંડો',
+    tideForecastHigh: 'ઉચ્ચતમ',
+    tideForecastLow: 'ન્યૂનતમ',
+    tideForecastAvg: 'સરેરાશ',
+  },
+};
+
+export const voiceAlertTexts: Record<Language, Record<string, string>> = {
+  en: {
+    highTide: 'Attention. High tide warning issued for Juhu Beach. Please move away from the shoreline and proceed to higher ground.',
+    tsunami: 'Emergency. Tsunami risk alert for Juhu Beach. Evacuate immediately. Move to higher ground and follow evacuation routes.',
+    flood: 'Warning. Coastal flood alert for Juhu Beach area. Avoid low-lying areas and coastal roads.',
+    rain: 'Advisory. Heavy rainfall warning for Juhu Beach. Exercise caution near water bodies.',
+  },
+  hi: {
+    highTide: 'ध्यान दें। जुहू बीच के लिए उच्च ज्वार चेतावनी जारी। कृपया समुद्र तट से दूर जाएं और ऊंचे स्थान पर जाएं।',
+    tsunami: 'आपातकाल। जुहू बीच के लिए सुनामी जोखिम चेतावनी। तुरंत निकासी करें। ऊंचे स्थान पर जाएं।',
+    flood: 'चेतावनी। जुहू बीच क्षेत्र के लिए तटीय बाढ़ चेतावनी। निचले इलाकों और तटीय सड़कों से बचें।',
+    rain: 'सलाह। जुहू बीच के लिए भारी बारिश की चेतावनी। जल निकायों के पास सावधानी बरतें।',
+  },
+  mr: {
+    highTide: 'लक्ष द्या। जुहू बीचसाठी उच्च भरती इशारा जारी. कृपया समुद्रकिनाऱ्यापासून दूर जा आणि उंच ठिकाणी जा.',
+    tsunami: 'आणीबाणी। जुहू बीचसाठी त्सुनामी धोका सतर्कता. ताबडतोब निर्वासन करा. उंच ठिकाणी जा.',
+    flood: 'इशारा। जुहू बीच परिसरासाठी किनारपट्टी पूर सतर्कता. सखल भाग आणि किनारपट्टी रस्ते टाळा.',
+    rain: 'सूचना। जुहू बीचसाठी मुसळधार पाऊस इशारा. जलाशयांजवळ सावधगिरी बाळगा.',
+  },
+  gu: {
+    highTide: 'ધ્યાન આપો. જુહુ બીચ માટે ઉંચો ભરતી ચેતવણી જારી. કૃપા કરીને દરિયાકાંઠેથી દૂર જાઓ અને ઊંચા સ્થાને જાઓ.',
+    tsunami: 'કટોકટી. જુહુ બીચ માટે સુનામી જોખમ ચેતવણી. તરત ખાલી કરો. ઊંચા સ્થાને જાઓ.',
+    flood: 'ચેતવણી. જુહુ બીચ વિસ્તાર માટે દરિયાકાંઠા પૂર ચેતવણી. નીચા વિસ્તારો અને દરિયાકાંઠાના રસ્તા ટાળો.',
+    rain: 'સલાહ. જુહુ બીચ માટે ભારે વરસાદ ચેતવણી. જળાશયો પાસે સાવધાની રાખો.',
+  },
+};
+
+// --- ElevenLabs AI Voice System ---
+
+let currentAudio: HTMLAudioElement | null = null;
+
+const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL ?? '';
+const SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ?? '';
+
+// Track if ElevenLabs has failed so we skip it on subsequent calls in the same session
+let elevenLabsDisabled = false;
+
+export async function speakAlert(text: string, lang: Language, onEnd?: () => void): Promise<void> {
+  // Stop any current playback first
+  stopSpeaking();
+
+  // Skip ElevenLabs if previously failed or not configured
+  if (!SUPABASE_URL || elevenLabsDisabled) {
+    console.log('[BayWatch Voice] Using browser TTS');
+    speakAlertBrowserFallback(text, lang, onEnd);
+    return;
+  }
+
+  try {
+    console.log(`[BayWatch Voice] Generating AI voice for language: ${lang}`);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/elevenlabs-tts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({ text, language: lang }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.warn('[BayWatch Voice] AI voice unavailable, using browser TTS:', err);
+      // Disable ElevenLabs for this session to avoid repeated failures
+      elevenLabsDisabled = true;
+      speakAlertBrowserFallback(text, lang, onEnd);
+      return;
+    }
+
+    const audioBlob = await response.blob();
+    if (audioBlob.size < 100) {
+      console.warn('[BayWatch Voice] Empty audio response, using browser TTS');
+      elevenLabsDisabled = true;
+      speakAlertBrowserFallback(text, lang, onEnd);
+      return;
+    }
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    currentAudio = audio;
+
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      if (onEnd) onEnd();
+    };
+
+    audio.onerror = (e) => {
+      console.error('[BayWatch Voice] Audio playback error:', e);
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      // Fallback on playback error too
+      speakAlertBrowserFallback(text, lang, onEnd);
+    };
+
+    await audio.play();
+    console.log('[BayWatch Voice] AI voice playing successfully');
+  } catch (err) {
+    console.warn('[BayWatch Voice] AI voice failed, using browser TTS:', err);
+    elevenLabsDisabled = true;
+    speakAlertBrowserFallback(text, lang, onEnd);
+  }
+}
+
+export function stopSpeaking() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  // Also stop any browser TTS fallback
+  if ('speechSynthesis' in window) {
+    speechSynthesis.cancel();
+  }
+}
+
+// Browser TTS fallback if ElevenLabs is unavailable
+function speakAlertBrowserFallback(text: string, lang: Language, onEnd?: () => void): void {
+  if (!('speechSynthesis' in window)) {
+    if (onEnd) onEnd();
+    return;
+  }
+  speechSynthesis.cancel();
+  const speech = new SpeechSynthesisUtterance(text);
+  const langMap: Record<Language, string> = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN', gu: 'gu-IN' };
+  speech.lang = langMap[lang];
+  speech.rate = 1;
+  speech.pitch = 1;
+  if (onEnd) {
+    speech.onend = onEnd;
+    speech.onerror = () => onEnd();
+  }
+  speechSynthesis.speak(speech);
+}
