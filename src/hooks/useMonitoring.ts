@@ -61,7 +61,12 @@ export function useMonitoring(intervalMs = 10000) {
     let newData: MonitoringData;
     let newAlerts: AlertInfo[];
 
-    if (weather.isLive) {
+    // Use marine.status from the normalized marine adapter instead of the
+    // deprecated weather.isLive. The adapter provides a normalized status:
+    // 'live' | 'stale' | 'unavailable' | 'offline'
+    const marineStatus = marine.status;
+
+    if (marineStatus === 'live' || marineStatus === 'stale') {
       const status = currentStatus(marine, isOnline);
       newData = deriveMonitoringData(
         marine.waveHeight,
@@ -71,7 +76,7 @@ export function useMonitoring(intervalMs = 10000) {
         tsunamiRisk
       );
       newAlerts = getAlerts(newData, tsunamiRisk);
-      setSourceStatus('live');
+      setSourceStatus(status);
 
       saveToCache(CACHE_KEYS.MONITORING_DATA, newData, 'Open-Meteo');
       saveToCache(CACHE_KEYS.ALERTS, newAlerts, 'Open-Meteo');

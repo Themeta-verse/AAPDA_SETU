@@ -88,8 +88,10 @@ PREDICT
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Basic resource display | Not implemented | |
-| Responder dashboard | Not implemented | |
+| Resource inventory management | **Implemented** | Normalized `resources` table with operational status, capacities, and geographic links |
+| Responder Resource Command Center | **Implemented** | Summary KPIs, inventory filtering, active demand overview, and audit log |
+| Deterministic recommendation engine | **Implemented** | Rule-based compatible resource recommendations with human approval workflow |
+| State-driven resource allocation | **Implemented** | Atomic capacity decrement, status updates, and audit trail via `resource_allocations` |
 | Supply tracking | Later phase | |
 | Volunteer coordination | Later phase | |
 

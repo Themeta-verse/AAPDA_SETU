@@ -25,6 +25,7 @@ import { EmergencyBroadcastBanner } from '@/components/EmergencyBroadcastBanner'
 import { LocationTracker } from '@/components/LocationTracker';
 import { CitizenReporting } from '@/components/CitizenReporting';
 import { IncidentIntelligence } from '@/components/IncidentIntelligence';
+import { ResourceCommandCenter } from '@/components/ResourceCommandCenter';
 import { DataSourcesFooter } from '@/components/DataSourcesFooter';
 import { LogOut, User, Bell, CheckCircle, AlertCircle, FlaskConical, RefreshCw, Wifi, WifiOff, Clock, Upload } from 'lucide-react';
 
@@ -231,6 +232,13 @@ const Index = () => {
           and renders an explicit access notice for non-operational users, so
           it is always mounted and always states which view you are seeing. */}
       <IncidentIntelligence language={language} user={user} />
+
+      {/* Operational Resource Command Center */}
+      <ResourceCommandCenter
+        language={language}
+        riskZones={riskZones}
+        currentRiskLevel={activeData.riskLevel}
+      />
 
       <TouristMode language={language} />
 

@@ -365,3 +365,28 @@ Without these, all SMS deliveries remain in TEST MODE — no real SMS sent, no c
 * `src/pages/Index.tsx` — Top bar modifications
 * `vite.config.ts` — If other developer modifies Vite config
 * `src/components/CitizenReporting.tsx` — If other developer modifies incident reporting
+
+---
+
+### 2026-10-01 — Resource Command Center & Resource Management
+
+#### Files Created
+* `supabase/migrations/20261001120000_resource_command_center.sql` — Schema migration for resources, allocations, audit logs, and compatibility matrix
+* `src/integrations/supabase/resources.ts` — Typed data access layer with normalization, offline guards, and deterministic rule-based recommendation engine
+* `src/hooks/useResources.ts` — React hooks (`useResources`, `useResourceAllocations`, `useResourceAuditLogs`, `useResourceCompatibility`, `useResourceMutations`)
+* `src/components/ResourceCommandCenter.tsx` — Complete operational command center UI with multilingual support, KPIs, inventory filters, and approval workflows
+* `src/integrations/supabase/resources.test.ts` — Unit & integration tests for all 13 core requirements and migration static assertions
+* `src/components/ResourceCommandCenter.test.tsx` — RTL component behavioral tests for role gating, KPIs, recommendations, and offline notice
+
+#### Files Modified
+* `src/integrations/supabase/types.ts` — Added database types for `resources`, `resource_allocations`, `resource_audit_logs`, `resource_incident_compatibility` and associated enums
+* `src/lib/offlineCache.ts` — Added `RESOURCES` and `ALLOCATIONS` cache keys
+* `src/pages/Index.tsx` — Mounted `ResourceCommandCenter` component connecting real incidents and risk zones
+* `FEATURES.md` — Marked Resource allocation features as implemented
+* `CURRENT_CHANGES.md` — This entry
+
+#### Validation Performed
+* `npm run build` — **PASS** (11.39s, bundle generated cleanly)
+* `npm run test` — **PASS** (9 test files, 200 tests passing)
+* `npx tsc --noEmit` — **PASS** (0 type errors)
+* Merge conflict markers search (`<<<<<<<`, `=======`, `>>>>>>>`) — **0 found**

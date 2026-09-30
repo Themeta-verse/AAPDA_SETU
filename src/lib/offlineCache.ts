@@ -72,6 +72,8 @@ export const CACHE_KEYS = {
   RISK_ZONES: 'risk_zones',
   WEATHER_DATA: 'weather_data',
   EARTHQUAKE_DATA: 'earthquake_data',
+  RESOURCES: 'resources',
+  ALLOCATIONS: 'allocations',
 } as const;
 
 export type CacheKey = typeof CACHE_KEYS[keyof typeof CACHE_KEYS];
