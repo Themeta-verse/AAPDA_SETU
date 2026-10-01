@@ -12,10 +12,20 @@ interface HeroSectionProps {
   isSimulation?: boolean;
   /** Freshness of the underlying source. LIVE claims are gated on this. */
   sourceStatus?: SourceStatus;
+  locationName?: string;
 }
 
-export function HeroSection({ language, riskLevel, clock, onViewAlerts, isSimulation, sourceStatus = 'unavailable' }: HeroSectionProps) {
+export function HeroSection({
+  language,
+  riskLevel,
+  clock,
+  onViewAlerts,
+  isSimulation,
+  sourceStatus = 'unavailable',
+  locationName,
+}: HeroSectionProps) {
   const t = translations[language];
+  const displayLocation = locationName || t.juhuBeach;
   const hasData = statusHasMeasurements(sourceStatus);
   const riskKey = riskLevel === 'critical' ? 'critical' : riskLevel === 'high' ? 'high' : riskLevel === 'moderate' ? 'moderate' : 'safe';
   const riskLabel = hasData ? t[riskKey] : 'NO DATA';
@@ -124,7 +134,7 @@ export function HeroSection({ language, riskLevel, clock, onViewAlerts, isSimula
           <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 mb-8">
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-primary" />
-              <span className="text-xs sm:text-sm font-medium text-foreground">{t.juhuBeach}</span>
+              <span className="text-xs sm:text-sm font-medium text-foreground">{displayLocation}</span>
             </div>
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-card/60 border border-border">
               <span className="text-xs sm:text-sm font-mono text-primary">{clock.toLocaleTimeString()}</span>

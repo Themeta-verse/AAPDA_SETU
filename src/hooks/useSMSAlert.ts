@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
-import { useGeolocation, calculateDistance, JUHU_BEACH } from './useGeolocation';
+import { useGeolocation, calculateDistance } from './useGeolocation';
 import { useMonitoring } from './useMonitoring';
 import { type RiskLevel } from '@/lib/monitoringData';
 

@@ -11,6 +11,8 @@ import {
   createResource as apiCreateResource,
   createResourceAllocation as apiCreateAllocation,
   updateResourceAllocation as apiUpdateAllocation,
+  deleteResource as apiDeleteResource,
+  deleteResourceAllocation as apiDeleteAllocation,
   type Resource,
   type ResourceAllocation,
   type ResourceAuditLog,
@@ -428,10 +430,88 @@ export function useResourceMutations(options?: UseResourcesOptions) {
     [user, isOnline, client]
   );
 
+  const deleteResource = useCallback(
+    async (resourceId: string) => {
+      if (!user) {
+        setMutationError('Sign in required.');
+        return { ok: false };
+      }
+
+      if (!isOnline) {
+        setMutationError('Action requires connection. Resources cannot be deleted offline.');
+        return { ok: false };
+      }
+
+      setIsSubmitting(true);
+      setMutationError(null);
+
+      try {
+        const result = await apiDeleteResource(
+          { client, isOnline: () => isOnline, now: () => new Date() },
+          resourceId
+        );
+
+        if (result.error) {
+          setMutationError(result.error.message);
+          return { ok: false };
+        }
+
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to delete resource';
+        setMutationError(msg);
+        return { ok: false };
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [user, isOnline, client]
+  );
+
+  const deleteAllocation = useCallback(
+    async (allocationId: string) => {
+      if (!user) {
+        setMutationError('Sign in required.');
+        return { ok: false };
+      }
+
+      if (!isOnline) {
+        setMutationError('Action requires connection. Allocations cannot be deleted offline.');
+        return { ok: false };
+      }
+
+      setIsSubmitting(true);
+      setMutationError(null);
+
+      try {
+        const result = await apiDeleteAllocation(
+          { client, isOnline: () => isOnline, now: () => new Date() },
+          allocationId
+        );
+
+        if (result.error) {
+          setMutationError(result.error.message);
+          return { ok: false };
+        }
+
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to delete allocation';
+        setMutationError(msg);
+        return { ok: false };
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [user, isOnline, client]
+  );
+
   return {
     createResource,
     createAllocation,
     updateAllocation,
+    deleteResource,
+    deleteAllocation,
     isSubmitting,
     error: mutationError,
     clearError: () => setMutationError(null),

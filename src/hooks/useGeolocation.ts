@@ -6,10 +6,11 @@ interface GeoPosition {
   accuracy: number;
 }
 
-// Juhu Beach coordinates
-export const JUHU_BEACH = { latitude: 19.0988, longitude: 72.8267 };
+// Default reference location (Juhu Beach coastal baseline for seed demo)
+export const DEFAULT_REFERENCE_LOCATION = { latitude: 19.0988, longitude: 72.8267, name: 'Reference Hazard Point' };
+export const JUHU_BEACH = DEFAULT_REFERENCE_LOCATION;
 
-// Haversine formula for distance between two points
+// Haversine formula for distance between two points in km
 export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Earth radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -20,8 +21,26 @@ export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Calculate compass heading from user position to a safe target point */
+export function getEvacuationDirectionTo(userLat: number, userLon: number, targetLat: number, targetLon: number): string {
+  const dLon = (targetLon - userLon) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(targetLat * Math.PI / 180);
+  const x = Math.cos(userLat * Math.PI / 180) * Math.sin(targetLat * Math.PI / 180) -
+    Math.sin(userLat * Math.PI / 180) * Math.cos(targetLat * Math.PI / 180) * Math.cos(dLon);
+  const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+
+  if (bearing >= 337.5 || bearing < 22.5) return 'North';
+  if (bearing >= 22.5 && bearing < 67.5) return 'North-East';
+  if (bearing >= 67.5 && bearing < 112.5) return 'East';
+  if (bearing >= 112.5 && bearing < 157.5) return 'South-East';
+  if (bearing >= 157.5 && bearing < 202.5) return 'South';
+  if (bearing >= 202.5 && bearing < 247.5) return 'South-West';
+  if (bearing >= 247.5 && bearing < 292.5) return 'West';
+  return 'North-West';
+}
+
 export function getEvacuationDirection(userLat: number, userLon: number): string {
-  // Juhu Beach is on the west coast - move east/inland
+  // Move inland (East) from coast
   const bearing = Math.atan2(
     Math.sin((72.84 - userLon) * Math.PI / 180) * Math.cos(19.1 * Math.PI / 180),
     Math.cos(userLat * Math.PI / 180) * Math.sin(19.1 * Math.PI / 180) -
@@ -34,7 +53,16 @@ export function getEvacuationDirection(userLat: number, userLon: number): string
   return 'West';
 }
 
-export function useGeolocation() {
+export interface GeolocationTarget {
+  latitude: number;
+  longitude: number;
+  name?: string;
+}
+
+export function useGeolocation(
+  referenceTarget: GeolocationTarget = DEFAULT_REFERENCE_LOCATION,
+  safeTarget?: GeolocationTarget | null
+) {
   const [position, setPosition] = useState<GeoPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -85,13 +113,25 @@ export function useGeolocation() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [permissionGranted]);
 
-  const distanceFromBeach = position
-    ? calculateDistance(position.latitude, position.longitude, JUHU_BEACH.latitude, JUHU_BEACH.longitude)
+  const target = referenceTarget || DEFAULT_REFERENCE_LOCATION;
+  const distanceToHazard = position
+    ? calculateDistance(position.latitude, position.longitude, target.latitude, target.longitude)
     : null;
 
   const evacuationDirection = position
-    ? getEvacuationDirection(position.latitude, position.longitude)
+    ? safeTarget
+      ? getEvacuationDirectionTo(position.latitude, position.longitude, safeTarget.latitude, safeTarget.longitude)
+      : getEvacuationDirection(position.latitude, position.longitude)
     : null;
 
-  return { position, error, loading, permissionGranted, requestLocation, distanceFromBeach, evacuationDirection };
+  return {
+    position,
+    error,
+    loading,
+    permissionGranted,
+    requestLocation,
+    distanceToHazard,
+    distanceFromBeach: distanceToHazard,
+    evacuationDirection,
+  };
 }

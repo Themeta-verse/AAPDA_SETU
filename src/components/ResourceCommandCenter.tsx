@@ -122,8 +122,8 @@ const labels: Record<
   }
 > = {
   en: {
-    title: 'Resource Command Center',
-    subtitle: 'Real-time resource capacity, deterministic allocation recommendations, and urban deployment control.',
+    title: 'Urban Resource Command Center',
+    subtitle: 'Real-time urban resource capacity, deterministic allocation recommendations, and municipal deployment control.',
     refresh: 'Refresh',
     refreshing: 'Updating...',
     totalResources: 'Total Resources',
@@ -140,7 +140,7 @@ const labels: Record<
     filterByType: 'Filter by Type',
     filterByStatus: 'Filter by Status',
     filterByZone: 'Filter by Zone',
-    searchPlaceholder: 'Search resources by name or location...',
+    searchPlaceholder: 'Search resources by name, ward, or zone...',
     allTypes: 'All Resource Types',
     allStatuses: 'All Statuses',
     allZones: 'All Zones',
@@ -152,7 +152,7 @@ const labels: Record<
     release: 'Complete / Release',
     quantity: 'Total Qty',
     availableQty: 'Available Qty',
-    locationZone: 'Location / Zone',
+    locationZone: 'Ward / Zone / Location',
     status: 'Operational State',
     reason: 'Rule Justification',
     rulePriority: 'Priority',
@@ -182,8 +182,8 @@ const labels: Record<
     rejectionReasonPrompt: 'Optional rejection reason:',
   },
   hi: {
-    title: 'संसाधन कमांड सेंटर',
-    subtitle: 'वास्तविक समय संसाधन क्षमता, नियतात्मक आवंटन सिफारिशें और प्रतिक्रिया नियंत्रण।',
+    title: 'शहरी संसाधन कमांड सेंटर',
+    subtitle: 'वास्तविक समय शहरी संसाधन क्षमता, नियतात्मक आवंटन सिफारिशें और नगरपालिका तैनाती नियंत्रण।',
     refresh: 'ताज़ा करें',
     refreshing: 'अपडेट हो रहा है...',
     totalResources: 'कुल संसाधन',
@@ -212,7 +212,7 @@ const labels: Record<
     release: 'मुक्त करें',
     quantity: 'कुल मात्रा',
     availableQty: 'उपलब्ध मात्रा',
-    locationZone: 'स्थान / क्षेत्र',
+    locationZone: 'वार्ड / ज़ोन / स्थान',
     status: 'परिचालन स्थिति',
     reason: 'नियम कारण',
     rulePriority: 'प्राथमिकता',
@@ -242,8 +242,8 @@ const labels: Record<
     rejectionReasonPrompt: 'अस्वीकृति का कारण (वैकल्पिक):',
   },
   mr: {
-    title: 'संसाधन कमांड सेंटर',
-    subtitle: 'थेट संसाधन क्षमता, नियम-आधारित वाटप शिफारसी आणि आपत्कालीन प्रतिसाद नियंत्रण.',
+    title: 'नागरी संसाधन कमांड सेंटर',
+    subtitle: 'थेट नागरी संसाधन क्षमता, नियम-आधारित वाटप शिफारसी आणि पालिका प्रतिसाद नियंत्रण.',
     refresh: 'ताजे करा',
     refreshing: 'अपडेट होत आहे...',
     totalResources: 'एकूण संसाधने',
@@ -272,7 +272,7 @@ const labels: Record<
     release: 'मुक्त करा',
     quantity: 'एकूण संख्या',
     availableQty: 'उपलब्ध संख्या',
-    locationZone: 'स्थान / झोन',
+    locationZone: 'वॉर्ड / झोन / स्थान',
     status: 'स्थिती',
     reason: 'कारण',
     rulePriority: 'प्राधान्य',
@@ -302,8 +302,8 @@ const labels: Record<
     rejectionReasonPrompt: 'नकार देण्याचे कारण (पर्यायी):',
   },
   gu: {
-    title: 'સંસાધન કમાન્ડ સેન્ટર',
-    subtitle: 'વાસ્તવિક સમય સંસાધન ક્ષમતા, નિયમ-આધારિત ફાળવણી ભલામણો અને આપત્તિ પ્રતિસાદ નિયંત્રણ.',
+    title: 'શહેરી સંસાધન કમાન્ડ સેન્ટર',
+    subtitle: 'વાસ્તવિક સમય શહેરી સંસાધન ક્ષમતા, નિયમ-આધારિત ફાળવણી ભલામણો અને આપત્તિ પ્રતિસાદ નિયંત્રણ.',
     refresh: 'તાજું કરો',
     refreshing: 'અપડેટ થઈ રહ્યું છે...',
     totalResources: 'કુલ સંસાધનો',
@@ -332,7 +332,7 @@ const labels: Record<
     release: 'મુક્ત કરો',
     quantity: 'કુલ જથ્થો',
     availableQty: 'ઉપલબ્ધ જથ્થો',
-    locationZone: 'સ્થાન / ઝોન',
+    locationZone: 'વોર્ડ / ઝોન / સ્થાન',
     status: 'સ્થિતિ',
     reason: 'કારણ',
     rulePriority: 'પ્રાથમિકતા',
@@ -404,7 +404,7 @@ export function ResourceCommandCenter({
   const t = labels[language] || labels.en;
   const { user: authUser } = useAuth();
   const user = userProp !== undefined ? userProp : authUser;
-  const { isOperational, role } = useAppRole(user);
+  const { isOperational, isAdmin, role } = useAppRole(user);
   const { isOnline } = useNetworkStatus();
 
   // Queries
@@ -441,6 +441,8 @@ export function ResourceCommandCenter({
     createResource,
     createAllocation,
     updateAllocation,
+    deleteResource,
+    deleteAllocation,
     isSubmitting,
     error: mutationError,
     clearError,
@@ -664,9 +666,18 @@ export function ResourceCommandCenter({
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
             <Radio className="w-6 h-6 text-primary animate-pulse" aria-hidden="true" />
             <h2 className="text-2xl font-bold tracking-tight text-foreground">{t.title}</h2>
+            {isOperational && (
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/30 text-xs font-bold text-primary tracking-wide uppercase"
+                data-testid="operational-role-badge"
+              >
+                <Shield className="w-3.5 h-3.5 text-primary" />
+                <span>OPERATIONAL ACCESS · {role}</span>
+              </span>
+            )}
           </div>
           <p className="text-muted-foreground text-sm mt-1 max-w-2xl">{t.subtitle}</p>
         </div>
@@ -1048,7 +1059,7 @@ export function ResourceCommandCenter({
                             {res.createdAt ? new Date(res.createdAt).toLocaleDateString() : 'N/A'}
                           </td>
                           {isOperational && (
-                            <td className="p-3 text-right">
+                            <td className="p-3 text-right space-x-1.5">
                               <button
                                 onClick={() => {
                                   setSelectedResourceId(res.id);
@@ -1059,6 +1070,22 @@ export function ResourceCommandCenter({
                               >
                                 Allocate
                               </button>
+                              {isAdmin && (
+                                <button
+                                  onClick={async () => {
+                                    if (window.confirm(`Delete ${res.name} from inventory?`)) {
+                                      await deleteResource(res.id);
+                                      await Promise.all([refetchResources(), refetchLogs()]);
+                                    }
+                                  }}
+                                  disabled={!isOnline || isSubmitting}
+                                  className="px-2.5 py-1 rounded-lg bg-danger/10 hover:bg-danger/20 text-danger text-[11px] font-semibold transition-colors disabled:opacity-30"
+                                  title="Admin: Delete Resource"
+                                  data-testid={`delete-resource-${res.id}`}
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </td>
                           )}
                         </tr>
@@ -1263,6 +1290,23 @@ export function ResourceCommandCenter({
                                   className="px-2 py-0.5 rounded bg-secondary text-foreground text-[11px] font-semibold hover:bg-secondary/80"
                                 >
                                   Release Unit
+                                </button>
+                              )}
+
+                              {isAdmin && (
+                                <button
+                                  onClick={async () => {
+                                    if (window.confirm('Delete this allocation record?')) {
+                                      await deleteAllocation(alloc.id);
+                                      await Promise.all([refetchAllocations(), refetchLogs()]);
+                                    }
+                                  }}
+                                  disabled={!isOnline || isSubmitting}
+                                  className="px-2 py-0.5 rounded bg-danger/10 text-danger text-[11px] font-semibold hover:bg-danger/20 transition-colors disabled:opacity-30"
+                                  title="Admin: Delete Allocation"
+                                  data-testid={`delete-allocation-${alloc.id}`}
+                                >
+                                  Delete
                                 </button>
                               )}
                             </td>

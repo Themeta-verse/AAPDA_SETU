@@ -9,6 +9,8 @@ import {
   createResource,
   createResourceAllocation,
   updateResourceAllocation,
+  deleteResource,
+  deleteResourceAllocation,
   computeRuleBasedRecommendations,
   normalizeResourceRow,
   normalizeAllocationRow,
@@ -37,7 +39,7 @@ function makeResourceRow(overrides: Row = {}): Row {
     status: 'available',
     quantity: 2,
     available_quantity: 2,
-    zone_id: 'zone-juhu-1111',
+    zone_id: 'zone-mumbai-kwest-1111',
     latitude: 19.0988,
     longitude: 72.8267,
     capacity: null,
@@ -53,7 +55,7 @@ function makeAllocationRow(overrides: Row = {}): Row {
     id: 'alloc-1111-1111-1111',
     resource_id: 'res-1111-1111-1111',
     incident_id: 'inc-1111-1111-1111',
-    zone_id: 'zone-juhu-1111',
+    zone_id: 'zone-mumbai-kwest-1111',
     quantity: 1,
     status: 'pending',
     allocated_by: 'user-responder-1',
@@ -131,18 +133,21 @@ function fakeClient(options: FakeClientOptions = {}) {
         },
         insert: (values: Row) => {
           calls.inserts.push({ table, values });
-          if (options.error) {
-            return Promise.resolve({ data: null, error: options.error });
-          }
           const insertedRow = { id: `generated-${Date.now()}`, ...values };
-          if ((store as any)[table]) {
+          if (!options.error && (store as any)[table]) {
             (store as any)[table].push(insertedRow);
           }
           return {
             select: () => ({
-              single: () => Promise.resolve({ data: insertedRow, error: null }),
+              single: () => Promise.resolve({
+                data: options.error ? null : insertedRow,
+                error: options.error ?? null,
+              }),
             }),
-            then: (resolve: any) => resolve({ data: insertedRow, error: null }),
+            then: (resolve: any) => resolve({
+              data: options.error ? null : insertedRow,
+              error: options.error ?? null,
+            }),
           };
         },
         update: (values: Row) => {
@@ -158,6 +163,18 @@ function fakeClient(options: FakeClientOptions = {}) {
                 Object.assign(row, values);
               }
               return Promise.resolve({ data: row, error: null });
+            },
+          };
+        },
+        delete: () => {
+          return {
+            eq: (col: string, val: unknown) => {
+              if (options.error) {
+                return Promise.resolve({ data: null, error: options.error });
+              }
+              const list = (store as any)[table] || [];
+              (store as any)[table] = list.filter((item: any) => item[col] !== val);
+              return Promise.resolve({ data: null, error: null });
             },
           };
         },
@@ -351,6 +368,80 @@ describe('6 & 7. Authorization & Role Security', () => {
     const listResult = await listResources(deps(client));
     expect(listResult.error?.kind).toBe('database');
   });
+
+  it('rejects unauthorized resource creation when RLS policy denies it (unauthorized mutation → rejected)', async () => {
+    const { client } = fakeClient({
+      error: { message: 'new row violates row-level security policy for table "resources"', code: '42501' },
+    });
+
+    const result = await createResource(deps(client), {
+      name: 'Unauthorized Pump',
+      resourceType: 'water_pump',
+      quantity: 1,
+      createdBy: 'citizen-user',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('permission-denied');
+  });
+
+  it('rejects unauthorized resource allocation when RLS policy denies it (unauthorized mutation → rejected)', async () => {
+    const { client } = fakeClient({
+      resources: [makeResourceRow()],
+      error: { message: 'new row violates row-level security policy for table "resource_allocations"', code: '42501' },
+    });
+
+    const result = await createResourceAllocation(deps(client), {
+      resourceId: 'res-1111-1111-1111',
+      incidentId: 'inc-1',
+      zoneId: null,
+      quantity: 1,
+      allocatedBy: 'citizen-user',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('permission-denied');
+  });
+
+  it('rejects unauthorized resource deletion when RLS policy denies it (unauthorized mutation → rejected)', async () => {
+    const { client } = fakeClient({
+      error: { message: 'violates row-level security policy for table "resources"', code: '42501' },
+    });
+
+    const result = await deleteResource(deps(client), 'res-1111-1111-1111');
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('permission-denied');
+  });
+
+  it('rejects unauthorized allocation deletion when RLS policy denies it (unauthorized mutation → rejected)', async () => {
+    const { client } = fakeClient({
+      error: { message: 'violates row-level security policy for table "resource_allocations"', code: '42501' },
+    });
+
+    const result = await deleteResourceAllocation(deps(client), 'alloc-1111-1111-1111');
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe('permission-denied');
+  });
+
+  it('successfully deletes resource when authorized as admin', async () => {
+    const { client, store } = fakeClient({
+      resources: [makeResourceRow({ id: 'res-admin-del' })],
+    });
+
+    const result = await deleteResource(deps(client), 'res-admin-del');
+    expect(result.ok).toBe(true);
+    expect(store.resources.find((r) => r.id === 'res-admin-del')).toBeUndefined();
+  });
+
+  it('successfully deletes allocation when authorized as admin', async () => {
+    const { client, store } = fakeClient({
+      allocations: [makeAllocationRow({ id: 'alloc-admin-del' })],
+    });
+
+    const result = await deleteResourceAllocation(deps(client), 'alloc-admin-del');
+    expect(result.ok).toBe(true);
+    expect(store.resource_allocations.find((a) => a.id === 'alloc-admin-del')).toBeUndefined();
+  });
 });
 
 describe('8 & 9. Deterministic Recommendation Compatibility Logic', () => {
@@ -405,7 +496,7 @@ describe('8 & 9. Deterministic Recommendation Compatibility Logic', () => {
       resources,
       compatibilities,
       allocations: [],
-      zones: [{ id: 'zone-juhu-1111', name: 'Juhu Risk Zone' }],
+      zones: [{ id: 'zone-mumbai-kwest-1111', name: 'Ward K-West Risk Zone' }],
     });
 
     expect(recs.length).toBe(1);

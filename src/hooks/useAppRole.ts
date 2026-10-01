@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { AppRole } from '@/integrations/supabase/types';
+import { supabase } from '@/integrations/supabase/client';
 
 export type { AppRole };
 
@@ -40,17 +41,72 @@ export interface AppRoleState {
   isOperational: boolean;
   isAdmin: boolean;
   isSignedIn: boolean;
+  isResolving: boolean;
 }
 
 export function useAppRole(user: User | null | undefined): AppRoleState {
-  return useMemo(() => {
-    const isSignedIn = !!user;
-    const role = readAppRole(user);
-    return {
-      role,
-      isOperational: role === 'responder' || role === 'admin',
-      isAdmin: role === 'admin',
-      isSignedIn,
+  const initialRole = readAppRole(user);
+  const [resolvedRole, setResolvedRole] = useState<AppRole>(initialRole);
+  const [isResolving, setIsResolving] = useState<boolean>(() => {
+    if (!user) return false;
+    const claim = user.app_metadata?.role;
+    // If claim is already an elevated operational role, no async verification required
+    return !(claim === 'admin' || claim === 'responder');
+  });
+
+  useEffect(() => {
+    if (!user) {
+      setResolvedRole('citizen');
+      setIsResolving(false);
+      return;
+    }
+
+    const claim = user.app_metadata?.role;
+    if (claim === 'admin' || claim === 'responder') {
+      setResolvedRole(claim);
+      setIsResolving(false);
+      return;
+    }
+
+    // When app_metadata role is not yet elevated in the current token,
+    // verify against the authoritative profiles table row for this user
+    let cancelled = false;
+    setIsResolving(true);
+
+    supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (!error && data?.role && isAppRole(data.role) && data.role !== 'citizen') {
+          setResolvedRole(data.role);
+          // Background trigger to sync session token if possible
+          supabase.auth.refreshSession().catch(() => {});
+        } else {
+          setResolvedRole(readAppRole(user));
+        }
+        setIsResolving(false);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResolvedRole(readAppRole(user));
+          setIsResolving(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, [user]);
+
+  const role = resolvedRole;
+  return {
+    role,
+    isOperational: role === 'responder' || role === 'admin',
+    isAdmin: role === 'admin',
+    isSignedIn: !!user,
+    isResolving,
+  };
 }

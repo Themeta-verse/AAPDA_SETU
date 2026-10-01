@@ -100,6 +100,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          email: string | null
           id: string
           latitude: number | null
           longitude: number | null
@@ -110,6 +111,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          email?: string | null
           id: string
           latitude?: number | null
           longitude?: number | null
@@ -120,6 +122,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          email?: string | null
           id?: string
           latitude?: number | null
           longitude?: number | null
@@ -168,40 +171,52 @@ export type Database = {
           alert_threshold_km: number
           center_lat: number
           center_lon: number
+          city: string
           created_at: string
           event_types: string[]
           id: string
           is_active: boolean
+          is_coastal: boolean
           name: string
           radius_km: number
           severity_threshold: string
           updated_at: string
+          ward: string | null
+          zone_type: string
         }
         Insert: {
           alert_threshold_km?: number
           center_lat: number
           center_lon: number
+          city?: string
           created_at?: string
           event_types?: string[]
           id?: string
           is_active?: boolean
+          is_coastal?: boolean
           name: string
           radius_km?: number
           severity_threshold?: string
           updated_at?: string
+          ward?: string | null
+          zone_type?: string
         }
         Update: {
           alert_threshold_km?: number
           center_lat?: number
           center_lon?: number
+          city?: string
           created_at?: string
           event_types?: string[]
           id?: string
           is_active?: boolean
+          is_coastal?: boolean
           name?: string
           radius_km?: number
           severity_threshold?: string
           updated_at?: string
+          ward?: string | null
+          zone_type?: string
         }
         Relationships: []
       }
@@ -525,6 +540,62 @@ export type Database = {
           }
         ]
       }
+      safe_locations: {
+        Row: {
+          address: string | null
+          capacity: number | null
+          city: string
+          contact_number: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          latitude: number
+          location_type: string
+          longitude: number
+          name: string
+          updated_at: string
+          zone_id: string | null
+        }
+        Insert: {
+          address?: string | null
+          capacity?: number | null
+          city?: string
+          contact_number?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          latitude: number
+          location_type: string
+          longitude: number
+          name: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Update: {
+          address?: string | null
+          capacity?: number | null
+          city?: string
+          contact_number?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          latitude?: number
+          location_type?: string
+          longitude?: number
+          name?: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safe_locations_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "risk_zones"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -539,6 +610,51 @@ export type Database = {
           p_zone_id: string
         }
         Returns: boolean
+      }
+      admin_list_operational_users: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          email: string
+          name: string
+          role: AppRole
+          created_at: string
+          last_sign_in_at: string | null
+          status: string
+        }[]
+      }
+      admin_create_operational_user: {
+        Args: {
+          user_email: string
+          user_name: string
+          user_password?: string
+          user_role: string
+        }
+        Returns: Json
+      }
+      admin_update_user_role: {
+        Args: {
+          new_role: string
+          target_user_id: string
+        }
+        Returns: Json
+      }
+      admin_revoke_operational_access: {
+        Args: {
+          target_user_id: string
+        }
+        Returns: Json
+      }
+      provision_operational_account: {
+        Args: {
+          target_email: string
+          target_role?: string
+        }
+        Returns: Json
+      }
+      bootstrap_admin_account: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
     }
     Enums: {

@@ -9,6 +9,8 @@ import type { NormalizedMarine } from '@/hooks/useWeatherData';
 interface TideForecastProps {
   language: Language;
   marine: NormalizedMarine;
+  isCoastal?: boolean;
+  locationName?: string;
 }
 
 const STATUS_TEXT = {
@@ -25,9 +27,30 @@ function formatHour(iso: string): string {
   return match ? `${match[2]}:${match[3]}` : iso;
 }
 
-export function TideForecast({ language, marine }: TideForecastProps) {
+export function TideForecast({ language, marine, isCoastal = true, locationName }: TideForecastProps) {
   const t = translations[language];
   const { status } = marine;
+
+  if (!isCoastal) {
+    return (
+      <section className="container py-8" aria-label="Marine wave forecast">
+        <div className="glass-card rounded-2xl p-6 border-border">
+          <div className="flex flex-col items-center justify-center text-center gap-2 py-4">
+            <Waves className="w-8 h-8 text-muted-foreground/40" />
+            <h3 className="text-base font-bold text-foreground">
+              Marine & Wave Monitoring — Not Applicable (Inland Zone)
+            </h3>
+            <p className="text-xs text-muted-foreground max-w-lg">
+              Sea state, wave height, and tide forecasts are specific to coastal zones. For {locationName || 'inland urban areas'}, the platform actively monitors heavy precipitation, storm winds, urban waterlogging, and seismic hazards.
+            </p>
+            <span className="mt-2 px-2.5 py-0.5 rounded-full bg-secondary text-[10px] text-muted-foreground font-mono">
+              STATUS: NOT APPLICABLE (INLAND)
+            </span>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const data = useMemo(
     () =>

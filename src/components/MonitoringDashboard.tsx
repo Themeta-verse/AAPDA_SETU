@@ -13,6 +13,8 @@ interface MonitoringDashboardProps {
   alertIssuedTime?: Date;
   marine?: NormalizedMarine;
   earthquakes?: EarthquakeState;
+  locationName?: string;
+  isCoastal?: boolean;
 }
 
 /**
@@ -45,7 +47,16 @@ function GaugeRing({ value, max, color, size = 64 }: { value: number; max: numbe
   );
 }
 
-export function MonitoringDashboard({ data, language, clock, alertIssuedTime, marine, earthquakes }: MonitoringDashboardProps) {
+export function MonitoringDashboard({
+  data,
+  language,
+  clock,
+  alertIssuedTime,
+  marine,
+  earthquakes,
+  locationName,
+  isCoastal = true,
+}: MonitoringDashboardProps) {
   const t = translations[language];
   const hasData = statusHasMeasurements(data.status);
 
@@ -54,15 +65,85 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
   const gauge = (value: number | null) => (value === null ? 0 : value);
 
   const metrics = [
-    { icon: Waves, label: t.waveHeight, value: reading(data.waveHeight, 'm'), raw: gauge(data.waveHeight), max: 6, warn: data.waveHeight !== null && data.waveHeight > 3.5, critical: data.waveHeight !== null && data.waveHeight > 4.0 },
-    { icon: Wind, label: t.windSpeed, value: reading(data.windSpeed, ' km/h'), raw: gauge(data.windSpeed), max: 60, warn: data.windSpeed !== null && data.windSpeed > 20, critical: data.windSpeed !== null && data.windSpeed > 30 },
-    { icon: CloudRain, label: t.rainProbability, value: reading(data.rainProbability, '%'), raw: gauge(data.rainProbability), max: 100, warn: data.rainProbability !== null && data.rainProbability > 60, critical: data.rainProbability !== null && data.rainProbability > 80 },
-    { icon: Anchor, label: t.seaCondition, value: data.seaCondition ? t[data.seaCondition] : '—', raw: data.seaCondition === 'veryRough' ? 90 : data.seaCondition === 'rough' ? 60 : data.seaCondition === 'calm' ? 20 : 0, max: 100, warn: data.seaCondition === 'rough', critical: data.seaCondition === 'veryRough' },
-    ...(marine ? [
-      { icon: Thermometer, label: 'Temperature', value: reading(marine.temperature, '°C'), raw: gauge(marine.temperature), max: 50, warn: marine.temperature !== null && marine.temperature > 40, critical: marine.temperature !== null && marine.temperature > 45 },
-      { icon: BarChart3, label: 'Pressure', value: reading(marine.pressure, ' hPa'), raw: marine.pressure === null ? 0 : Math.max(0, 1050 - marine.pressure), max: 60, warn: marine.pressure !== null && marine.pressure < 1005, critical: marine.pressure !== null && marine.pressure < 995 },
-      { icon: Compass, label: 'Wave Dir / Period', value: `${reading(marine.waveDirection, '°')} / ${reading(marine.wavePeriod, 's')}`, raw: gauge(marine.wavePeriod), max: 20, warn: false, critical: false },
-    ] : []),
+    {
+      icon: Waves,
+      label: t.waveHeight,
+      value: isCoastal ? reading(data.waveHeight, 'm') : 'N/A (Inland)',
+      raw: isCoastal ? gauge(data.waveHeight) : 0,
+      max: 6,
+      warn: isCoastal && data.waveHeight !== null && data.waveHeight > 3.5,
+      critical: isCoastal && data.waveHeight !== null && data.waveHeight > 4.0,
+    },
+    {
+      icon: Wind,
+      label: t.windSpeed,
+      value: reading(data.windSpeed, ' km/h'),
+      raw: gauge(data.windSpeed),
+      max: 60,
+      warn: data.windSpeed !== null && data.windSpeed > 20,
+      critical: data.windSpeed !== null && data.windSpeed > 30,
+    },
+    {
+      icon: CloudRain,
+      label: t.rainProbability,
+      value: reading(data.rainProbability, '%'),
+      raw: gauge(data.rainProbability),
+      max: 100,
+      warn: data.rainProbability !== null && data.rainProbability > 60,
+      critical: data.rainProbability !== null && data.rainProbability > 80,
+    },
+    {
+      icon: Anchor,
+      label: t.seaCondition,
+      value: isCoastal ? (data.seaCondition ? t[data.seaCondition] : '—') : 'N/A (Inland)',
+      raw: isCoastal
+        ? data.seaCondition === 'veryRough'
+          ? 90
+          : data.seaCondition === 'rough'
+            ? 60
+            : data.seaCondition === 'calm'
+              ? 20
+              : 0
+        : 0,
+      max: 100,
+      warn: isCoastal && data.seaCondition === 'rough',
+      critical: isCoastal && data.seaCondition === 'veryRough',
+    },
+    ...(marine
+      ? [
+          {
+            icon: Thermometer,
+            label: 'Temperature',
+            value: reading(marine.temperature, '°C'),
+            raw: gauge(marine.temperature),
+            max: 50,
+            warn: marine.temperature !== null && marine.temperature > 40,
+            critical: marine.temperature !== null && marine.temperature > 45,
+          },
+          {
+            icon: BarChart3,
+            label: 'Pressure',
+            value: reading(marine.pressure, ' hPa'),
+            raw: marine.pressure === null ? 0 : Math.max(0, 1050 - marine.pressure),
+            max: 60,
+            warn: marine.pressure !== null && marine.pressure < 1005,
+            critical: marine.pressure !== null && marine.pressure < 995,
+          },
+          ...(isCoastal
+            ? [
+                {
+                  icon: Compass,
+                  label: 'Wave Dir / Period',
+                  value: `${reading(marine.waveDirection, '°')} / ${reading(marine.wavePeriod, 's')}`,
+                  raw: gauge(marine.wavePeriod),
+                  max: 20,
+                  warn: false,
+                  critical: false,
+                },
+              ]
+            : []),
+        ]
+      : []),
   ];
 
   const riskLabel = data.riskLevel === 'critical' ? t.critical : data.riskLevel === 'high' ? t.high : data.riskLevel === 'moderate' ? t.moderate : t.safe;
@@ -101,7 +182,7 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
             <div className="flex items-center gap-2">
               <Radio className="w-3 h-3 text-primary" />
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.location}:</span>
-              <span className="font-bold text-foreground">{t.juhuBeach}</span>
+              <span className="font-bold text-foreground">{locationName || t.juhuBeach}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.riskLevel}:</span>

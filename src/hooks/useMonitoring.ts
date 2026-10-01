@@ -18,17 +18,28 @@ import { loadFromCache, saveToCache, CACHE_KEYS } from '@/lib/offlineCache';
  * clock. The adapter stamps freshness at fetch time; this keeps a retained
  * reading from staying "live" while the tab sits open without refetching.
  */
-function currentStatus(marine: { fetchedAt: string | null; waveHeight: number | null }, isOnline: boolean): MonitoringData['status'] {
+function currentStatus(
+  marine: { fetchedAt: string | null; waveHeight: number | null; windSpeed?: number | null; rainProbability?: number | null },
+  isOnline: boolean,
+  isCoastal = true
+): MonitoringData['status'] {
+  const hasData = isCoastal
+    ? marine.waveHeight !== null
+    : (marine.windSpeed !== null || marine.rainProbability !== null);
   return resolveFreshness(
     marine.fetchedAt,
-    marine.waveHeight !== null,
+    hasData,
     new Date(),
     isOnline
   );
 }
 
-export function useMonitoring(intervalMs = 10000) {
-  const { marine, weather, marineHourly } = useWeatherData(300000);
+export function useMonitoring(
+  intervalMs = 10000,
+  coords?: { latitude: number; longitude: number },
+  isCoastal = true
+) {
+  const { marine, error } = useWeatherData(300000, coords, isCoastal);
   const { earthquakes, tsunamiFlag } = useEarthquakeData(300000);
   const { isOnline } = useNetworkStatus();
 
@@ -67,15 +78,16 @@ export function useMonitoring(intervalMs = 10000) {
     const marineStatus = marine.status;
 
     if (marineStatus === 'live' || marineStatus === 'stale') {
-      const status = currentStatus(marine, isOnline);
+      const status = currentStatus(marine, isOnline, isCoastal);
       newData = deriveMonitoringData(
         marine.waveHeight,
         marine.windSpeed,
         marine.rainProbability,
         status,
-        tsunamiRisk
+        tsunamiRisk,
+        isCoastal
       );
-      newAlerts = getAlerts(newData, tsunamiRisk);
+      newAlerts = getAlerts(newData, tsunamiRisk, isCoastal);
       setSourceStatus(status);
 
       saveToCache(CACHE_KEYS.MONITORING_DATA, newData, 'Open-Meteo');
@@ -83,7 +95,7 @@ export function useMonitoring(intervalMs = 10000) {
     } else {
       if (isOnline) {
         newData = emptyMonitoringData();
-        newAlerts = getAlerts(newData, tsunamiRisk);
+        newAlerts = getAlerts(newData, tsunamiRisk, isCoastal);
         setSourceStatus('unavailable');
       } else {
         const cachedData = loadFromCache<MonitoringData>(CACHE_KEYS.MONITORING_DATA);
@@ -91,11 +103,11 @@ export function useMonitoring(intervalMs = 10000) {
 
         if (cachedData) {
           newData = { ...cachedData.data, isLive: false };
-          newAlerts = cachedAlerts?.data ?? getAlerts(newData, tsunamiRisk);
+          newAlerts = cachedAlerts?.data ?? getAlerts(newData, tsunamiRisk, isCoastal);
           setSourceStatus('stale');
         } else {
           newData = emptyMonitoringData();
-          newAlerts = getAlerts(newData, tsunamiRisk);
+          newAlerts = getAlerts(newData, tsunamiRisk, isCoastal);
           setSourceStatus('offline');
         }
       }
@@ -103,7 +115,7 @@ export function useMonitoring(intervalMs = 10000) {
 
     setData(newData);
     setAlerts(newAlerts);
-  }, [weather, marine, isOnline, tsunamiRisk]);
+  }, [marine, isOnline, tsunamiRisk, isCoastal]);
 
   useEffect(() => {
     refresh();
@@ -123,9 +135,8 @@ export function useMonitoring(intervalMs = 10000) {
     alerts,
     clock,
     refresh,
-    weather,
     marine,
-    marineHourly,
+    marineHourly: marine.hourly,
     earthquakes,
     tsunamiRisk,
     sourceStatus,

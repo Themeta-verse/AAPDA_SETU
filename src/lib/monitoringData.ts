@@ -17,6 +17,7 @@ export interface MonitoringData {
   /**
    * Significant wave height in metres, from the Open-Meteo Marine endpoint.
    * This is wave height, not tide height: no tide gauge is integrated.
+   * Null in inland urban zones where marine monitoring is not applicable.
    */
   waveHeight: number | null;
   windSpeed: number | null;
@@ -24,6 +25,8 @@ export interface MonitoringData {
   seaCondition: SeaCondition | null;
   riskLevel: RiskLevel;
   status: SourceStatus;
+  /** Whether coastal monitoring is geographically applicable to this zone. */
+  isCoastal?: boolean;
 }
 
 /**
@@ -47,7 +50,7 @@ export interface AlertInfo {
 }
 
 /** Snapshot with no measurements. Used as the initial and empty state. */
-export function emptyMonitoringData(): MonitoringData {
+export function emptyMonitoringData(isCoastal = true): MonitoringData {
   return {
     waveHeight: null,
     windSpeed: null,
@@ -55,38 +58,63 @@ export function emptyMonitoringData(): MonitoringData {
     seaCondition: null,
     riskLevel: 'safe',
     status: 'unavailable',
+    isCoastal,
   };
 }
 
 /**
  * Derive the operational snapshot from normalized source values.
  *
- * Thresholds are unchanged from the existing risk engine; the change here is
- * null-safety. Previously any missing input was coerced to `0` and then
- * rendered as a green "safe" reading. Now a missing input propagates as
- * `null` and the snapshot is marked `unavailable` so the UI can say so.
+ * Thresholds support both coastal hazards and inland urban flooding/wind hazards.
+ * For inland zones, marine metrics are marked non-applicable without falsifying zero readings.
  */
 export function deriveMonitoringData(
   waveHeight: number | null,
   windSpeed: number | null,
   rainProbability: number | null,
   status: SourceStatus,
-  tsunamiRisk = false
+  tsunamiRisk = false,
+  isCoastal = true
 ): MonitoringData {
-  if (waveHeight === null || windSpeed === null || rainProbability === null) {
-    return { ...emptyMonitoringData(), status };
+  if (isCoastal) {
+    if (waveHeight === null || windSpeed === null || rainProbability === null) {
+      return { ...emptyMonitoringData(true), status };
+    }
+  } else {
+    // Inland urban zone: waveHeight is not applicable
+    if (windSpeed === null || rainProbability === null) {
+      return { ...emptyMonitoringData(false), status };
+    }
   }
 
-  let seaCondition: SeaCondition = 'calm';
-  if (windSpeed > 25) seaCondition = 'veryRough';
-  else if (windSpeed > 15) seaCondition = 'rough';
+  let seaCondition: SeaCondition | null = null;
+  if (isCoastal) {
+    seaCondition = 'calm';
+    if (windSpeed > 25) seaCondition = 'veryRough';
+    else if (windSpeed > 15) seaCondition = 'rough';
+  }
 
   let riskLevel: RiskLevel = 'safe';
-  if (tsunamiRisk || waveHeight > 4.0 || windSpeed > 40 || rainProbability > 85) riskLevel = 'critical';
-  else if (waveHeight > 3.5 || windSpeed > 30 || rainProbability > 70) riskLevel = 'high';
-  else if (waveHeight > 2.8 || windSpeed > 15 || rainProbability > 50) riskLevel = 'moderate';
+  if (isCoastal) {
+    if (tsunamiRisk || (waveHeight !== null && waveHeight > 4.0) || windSpeed > 40 || rainProbability > 85) riskLevel = 'critical';
+    else if ((waveHeight !== null && waveHeight > 3.5) || windSpeed > 30 || rainProbability > 70) riskLevel = 'high';
+    else if ((waveHeight !== null && waveHeight > 2.8) || windSpeed > 15 || rainProbability > 50) riskLevel = 'moderate';
+  } else {
+    // Inland urban hazard thresholds: precipitation runoff, urban waterlogging, and gale winds
+    if (windSpeed > 40 || rainProbability > 85) riskLevel = 'critical';
+    else if (windSpeed > 30 || rainProbability > 70) riskLevel = 'high';
+    else if (windSpeed > 15 || rainProbability > 50) riskLevel = 'moderate';
+  }
 
-  return { waveHeight, windSpeed, rainProbability, seaCondition, riskLevel, status };
+  return {
+    waveHeight: isCoastal ? waveHeight : null,
+    windSpeed,
+    rainProbability,
+    seaCondition,
+    riskLevel,
+    status,
+    isCoastal,
+  };
 }
 
 /**
@@ -104,9 +132,12 @@ export function hasMeasurements(data: MonitoringData): boolean {
 }
 
 export function getAlerts(data: MonitoringData, tsunamiRisk = false): AlertInfo[] {
-  // No usable measurements: every alert stays inactive. An inactive alert
-  // here means "no alert", which the UI pairs with an explicit no-data state.
-  if (!hasMeasurements(data) || data.waveHeight === null || data.windSpeed === null || data.rainProbability === null) {
+  const isCoastal = data.isCoastal ?? true;
+  const hasBaseMeasurements = isCoastal
+    ? hasMeasurements(data) && data.waveHeight !== null && data.windSpeed !== null && data.rainProbability !== null
+    : hasMeasurements(data) && data.windSpeed !== null && data.rainProbability !== null;
+
+  if (!hasBaseMeasurements) {
     return [
       {
         id: 'highWave',
@@ -157,8 +188,8 @@ export function getAlerts(data: MonitoringData, tsunamiRisk = false): AlertInfo[
       type: 'highWave',
       titleKey: 'highWaveWarning',
       descKey: 'highWaveDesc',
-      severity: data.waveHeight > 4.0 ? 'critical' : data.waveHeight > 3.5 ? 'high' : 'moderate',
-      active: data.waveHeight > 3.0,
+      severity: isCoastal && data.waveHeight !== null ? (data.waveHeight > 4.0 ? 'critical' : data.waveHeight > 3.5 ? 'high' : 'moderate') : 'safe',
+      active: isCoastal && data.waveHeight !== null && data.waveHeight > 3.0,
     },
     {
       id: 'tsunami',
@@ -166,31 +197,31 @@ export function getAlerts(data: MonitoringData, tsunamiRisk = false): AlertInfo[
       titleKey: 'tsunamiRisk',
       descKey: 'tsunamiDesc',
       severity: 'critical',
-      active: tsunamiRisk || (data.waveHeight > 4.5 && data.windSpeed > 25),
+      active: isCoastal && (tsunamiRisk || (data.waveHeight !== null && data.waveHeight > 4.5 && data.windSpeed! > 25)),
     },
     {
       id: 'flood',
       type: 'flood',
       titleKey: 'coastalFlood',
       descKey: 'coastalFloodDesc',
-      severity: data.rainProbability > 85 ? 'critical' : 'high',
-      active: data.rainProbability > 70,
+      severity: data.rainProbability! > 85 ? 'critical' : 'high',
+      active: data.rainProbability! > 70,
     },
     {
       id: 'rain',
       type: 'rain',
       titleKey: 'heavyRain',
       descKey: 'heavyRainDesc',
-      severity: data.rainProbability > 80 ? 'high' : 'moderate',
-      active: data.rainProbability > 50,
+      severity: data.rainProbability! > 80 ? 'high' : 'moderate',
+      active: data.rainProbability! > 50,
     },
     {
       id: 'storm',
       type: 'rain',
       titleKey: 'stormWarning',
       descKey: 'stormWarningDesc',
-      severity: data.windSpeed > 40 ? 'critical' : 'high',
-      active: data.windSpeed > 30,
+      severity: data.windSpeed! > 40 ? 'critical' : 'high',
+      active: data.windSpeed! > 30,
     },
   ];
 }

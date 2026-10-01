@@ -9,6 +9,7 @@ interface EmergencyBroadcastBannerProps {
   language: Language;
   riskLevel: RiskLevel;
   activeScenario: ScenarioType;
+  locationName?: string;
 }
 
 const scenarioConfig: Record<string, { icon: typeof Waves; voiceKey: string; titleKey: string; descKey: string; countdown: number }> = {
@@ -17,16 +18,17 @@ const scenarioConfig: Record<string, { icon: typeof Waves; voiceKey: string; tit
   flood: { icon: CloudRain, voiceKey: 'flood', titleKey: 'coastalFlood', descKey: 'coastalFloodDesc', countdown: 1200 },
 };
 
-const emergencyLabels: Record<Language, { emergency: string; evacuateIn: string; minutes: string; seconds: string; location: string }> = {
-  en: { emergency: 'EMERGENCY ALERT', evacuateIn: 'Evacuate within', minutes: 'min', seconds: 'sec', location: 'Location: Juhu Beach, Mumbai' },
-  hi: { emergency: 'आपातकालीन चेतावनी', evacuateIn: 'निकासी समय', minutes: 'मिनट', seconds: 'सेकंड', location: 'स्थान: जुहू बीच, मुंबई' },
-  mr: { emergency: 'आपत्कालीन सतर्कता', evacuateIn: 'निर्वासन वेळ', minutes: 'मिनिटे', seconds: 'सेकंद', location: 'स्थान: जुहू बीच, मुंबई' },
-  gu: { emergency: 'કટોકટી ચેતવણી', evacuateIn: 'ખાલી કરાવવાનો સમય', minutes: 'મિનિટ', seconds: 'સેકન્ડ', location: 'સ્થાન: જુહુ બીચ, મુંબઈ' },
+const emergencyLabels: Record<Language, { emergency: string; evacuateIn: string; minutes: string; seconds: string }> = {
+  en: { emergency: 'EMERGENCY ALERT', evacuateIn: 'Evacuate within', minutes: 'min', seconds: 'sec' },
+  hi: { emergency: 'आपातकालीन चेतावनी', evacuateIn: 'निकासी समय', minutes: 'मिनट', seconds: 'सेकंड' },
+  mr: { emergency: 'आपत्कालीन सतर्कता', evacuateIn: 'निर्वासन वेळ', minutes: 'मिनिटे', seconds: 'सेकंद' },
+  gu: { emergency: 'કટોકટી ચેતવણી', evacuateIn: 'ખાલી કરાવવાનો સમય', minutes: 'મિનિટ', seconds: 'સેકન્ડ' },
 };
 
-export function EmergencyBroadcastBanner({ language, riskLevel, activeScenario }: EmergencyBroadcastBannerProps) {
+export function EmergencyBroadcastBanner({ language, riskLevel, activeScenario, locationName }: EmergencyBroadcastBannerProps) {
   const t = translations[language];
   const el = emergencyLabels[language];
+  const displayLocation = locationName ? `Location: ${locationName}` : 'Location: Juhu Beach, Mumbai';
   const [dismissed, setDismissed] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const voiceTriggeredRef = useRef<string | null>(null);
@@ -120,7 +122,7 @@ export function EmergencyBroadcastBanner({ language, riskLevel, activeScenario }
                 </p>
 
                 <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2">
-                  <span className="text-white/70 text-[11px] sm:text-xs">📍 {el.location}</span>
+                  <span className="text-white/70 text-[11px] sm:text-xs">📍 {displayLocation}</span>
 
                   {countdown > 0 && (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 border border-white/20">

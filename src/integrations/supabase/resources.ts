@@ -877,6 +877,58 @@ export async function updateResourceAllocation(
   return { ok: true, error: null };
 }
 
+export async function deleteResource(
+  deps: ResourceDeps,
+  resourceId: string
+): Promise<{ ok: boolean; error: ResourceError | null }> {
+  if (checkOffline(deps)) {
+    return {
+      ok: false,
+      error: { kind: 'network', message: 'You appear to be offline. The resource cannot be deleted.' },
+    };
+  }
+
+  const { error } = await deps.client
+    .from('resources')
+    .delete()
+    .eq('id', resourceId);
+
+  if (error) {
+    return {
+      ok: false,
+      error: classify(error, 'database'),
+    };
+  }
+
+  return { ok: true, error: null };
+}
+
+export async function deleteResourceAllocation(
+  deps: ResourceDeps,
+  allocationId: string
+): Promise<{ ok: boolean; error: ResourceError | null }> {
+  if (checkOffline(deps)) {
+    return {
+      ok: false,
+      error: { kind: 'network', message: 'You appear to be offline. The allocation cannot be deleted.' },
+    };
+  }
+
+  const { error } = await deps.client
+    .from('resource_allocations')
+    .delete()
+    .eq('id', allocationId);
+
+  if (error) {
+    return {
+      ok: false,
+      error: classify(error, 'database'),
+    };
+  }
+
+  return { ok: true, error: null };
+}
+
 /**
  * Deterministic, explainable recommendation engine.
  *

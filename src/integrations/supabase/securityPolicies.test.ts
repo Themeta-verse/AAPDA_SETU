@@ -139,3 +139,133 @@ describe('defect regression guards', () => {
     );
   });
 });
+
+const resourceSql = readFileSync(
+  resolve(MIGRATIONS_DIR, '20261001120000_resource_command_center.sql'),
+  'utf8'
+);
+const flatResource = normalize(resourceSql);
+
+describe('resource command center RLS policies', () => {
+  it('enables RLS on all resource tables', () => {
+    expect(flatResource).toContain('ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY');
+    expect(flatResource).toContain('ALTER TABLE public.resource_allocations ENABLE ROW LEVEL SECURITY');
+    expect(flatResource).toContain('ALTER TABLE public.resource_audit_logs ENABLE ROW LEVEL SECURITY');
+    expect(flatResource).toContain('ALTER TABLE public.resource_incident_compatibility ENABLE ROW LEVEL SECURITY');
+  });
+
+  it('allows situational read of resources inventory to authenticated users', () => {
+    expect(flatResource).toContain(
+      'CREATE POLICY "Authenticated users can read resources" ON public.resources FOR SELECT TO authenticated USING (true)'
+    );
+  });
+
+  it('restricts resource mutations to responders and admins (public.is_responder)', () => {
+    expect(flatResource).toContain(
+      'CREATE POLICY "Responders can insert resources" ON public.resources FOR INSERT TO authenticated WITH CHECK ( public.is_responder() )'
+    );
+    expect(flatResource).toContain(
+      'CREATE POLICY "Responders can update resources" ON public.resources FOR UPDATE TO authenticated USING ( public.is_responder() )'
+    );
+  });
+
+  it('restricts resource deletion to admins only (current_app_role() = admin)', () => {
+    expect(flatResource).toContain(
+      'CREATE POLICY "Admins can delete resources" ON public.resources FOR DELETE TO authenticated USING ( public.current_app_role() = \'admin\' )'
+    );
+  });
+
+  it('restricts allocation creation and updates to responders and admins', () => {
+    expect(flatResource).toContain(
+      'CREATE POLICY "Responders can create resource allocations" ON public.resource_allocations FOR INSERT TO authenticated WITH CHECK ( public.is_responder() )'
+    );
+    expect(flatResource).toContain(
+      'CREATE POLICY "Responders can update resource allocations" ON public.resource_allocations FOR UPDATE TO authenticated USING ( public.is_responder() )'
+    );
+  });
+
+  it('restricts allocation deletion to admins only', () => {
+    expect(flatResource).toContain(
+      'CREATE POLICY "Admins can delete resource allocations" ON public.resource_allocations FOR DELETE TO authenticated USING ( public.current_app_role() = \'admin\' )'
+    );
+  });
+
+  it('restricts audit log reading and writing to operational roles', () => {
+    expect(flatResource).toContain(
+      'CREATE POLICY "Responders can read resource audit logs" ON public.resource_audit_logs FOR SELECT TO authenticated USING ( public.is_responder() )'
+    );
+    expect(flatResource).toContain(
+      'CREATE POLICY "Responders can insert resource audit logs" ON public.resource_audit_logs FOR INSERT TO authenticated WITH CHECK ( public.is_responder() )'
+    );
+  });
+
+  it('restricts compatibility matrix management to admin', () => {
+    expect(flatResource).toContain(
+      'CREATE POLICY "Admins can manage resource compatibility" ON public.resource_incident_compatibility FOR ALL TO authenticated USING ( public.current_app_role() = \'admin\' )'
+    );
+  });
+});
+
+const provisionSql = readFileSync(
+  resolve(MIGRATIONS_DIR, '20261001150000_provision_demo_operational_roles.sql'),
+  'utf8'
+);
+const flatProvision = normalize(provisionSql);
+
+describe('evaluator and operational account registry security', () => {
+  it('enables RLS on preauthorized_operational_roles table', () => {
+    expect(flatProvision).toContain('ALTER TABLE public.preauthorized_operational_roles ENABLE ROW LEVEL SECURITY');
+  });
+
+  it('revokes default table permissions from anon and authenticated', () => {
+    expect(flatProvision).toContain('REVOKE ALL ON public.preauthorized_operational_roles FROM anon, authenticated');
+  });
+
+  it('restricts SELECT on preauthorized roles strictly to authenticated admins', () => {
+    expect(flatProvision).toContain(
+      'CREATE POLICY "Admins can view preauthorized operational roles" ON public.preauthorized_operational_roles FOR SELECT TO authenticated USING (public.current_app_role() = \'admin\')'
+    );
+  });
+
+  it('restricts INSERT on preauthorized roles strictly to authenticated admins', () => {
+    expect(flatProvision).toContain(
+      'CREATE POLICY "Admins can insert preauthorized operational roles" ON public.preauthorized_operational_roles FOR INSERT TO authenticated WITH CHECK (public.current_app_role() = \'admin\')'
+    );
+  });
+
+  it('restricts UPDATE on preauthorized roles strictly to authenticated admins', () => {
+    expect(flatProvision).toContain(
+      'CREATE POLICY "Admins can update preauthorized operational roles" ON public.preauthorized_operational_roles FOR UPDATE TO authenticated USING (public.current_app_role() = \'admin\')'
+    );
+  });
+
+  it('restricts DELETE on preauthorized roles strictly to authenticated admins', () => {
+    expect(flatProvision).toContain(
+      'CREATE POLICY "Admins can delete preauthorized operational roles" ON public.preauthorized_operational_roles FOR DELETE TO authenticated USING (public.current_app_role() = \'admin\')'
+    );
+  });
+
+  it('drops legacy automatic triggers to ensure public signups never receive operational roles', () => {
+    expect(flatProvision).toContain('DROP TRIGGER IF EXISTS trg_assign_preauthorized_operational_role ON auth.users');
+    expect(flatProvision).toContain('DROP FUNCTION IF EXISTS public.handle_preauthorized_operational_role()');
+  });
+
+  it('guarantees public signup unconditionally defaults to citizen in app_metadata', () => {
+    expect(flatProvision).toContain("jsonb_build_object('role', 'citizen')");
+    expect(flatProvision).toContain("COALESCE(NEW.raw_app_meta_data->>'role', 'citizen')");
+  });
+
+  it('provisions operational accounts only via explicit admin-guarded procedure with strict search_path', () => {
+    expect(flatProvision).toContain('CREATE OR REPLACE FUNCTION public.provision_operational_account');
+    expect(flatProvision).toContain('SET search_path = public, auth');
+    expect(flatProvision).toContain("IF public.current_app_role() <> 'admin' THEN");
+    expect(flatProvision).toContain("REVOKE ALL ON FUNCTION public.provision_operational_account(TEXT, TEXT) FROM anon");
+  });
+
+  it('seeds designated admin and responder operational records', () => {
+    expect(flatProvision).toContain('admin@baywatch.org');
+    expect(flatProvision).toContain('responder@baywatch.org');
+    expect(flatProvision).toContain('ops-admin@aapda.gov.in');
+    expect(flatProvision).toContain('ops-responder@aapda.gov.in');
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { User } from '@supabase/supabase-js';
-import { isAppRole, readAppRole } from './useAppRole';
+import { isAppRole, readAppRole, useAppRole } from './useAppRole';
 
 /**
  * The client-side role is a DISPLAY concern only — Postgres decides access via
@@ -69,5 +69,50 @@ describe('isAppRole', () => {
     expect(isAppRole('ADMIN')).toBe(false);
     expect(isAppRole('moderator')).toBe(false);
     expect(isAppRole(null)).toBe(false);
+  });
+});
+
+import { renderHook } from '@testing-library/react';
+
+describe('useAppRole hook', () => {
+  it('synchronously resolves admin role when present in app_metadata claim', () => {
+    const adminUser = userWith({ role: 'admin' });
+    const { result } = renderHook(() => useAppRole(adminUser));
+
+    expect(result.current.role).toBe('admin');
+    expect(result.current.isOperational).toBe(true);
+    expect(result.current.isAdmin).toBe(true);
+    expect(result.current.isSignedIn).toBe(true);
+    expect(result.current.isResolving).toBe(false);
+  });
+
+  it('synchronously resolves responder role when present in app_metadata claim', () => {
+    const responderUser = userWith({ role: 'responder' });
+    const { result } = renderHook(() => useAppRole(responderUser));
+
+    expect(result.current.role).toBe('responder');
+    expect(result.current.isOperational).toBe(true);
+    expect(result.current.isAdmin).toBe(false);
+    expect(result.current.isSignedIn).toBe(true);
+    expect(result.current.isResolving).toBe(false);
+  });
+
+  it('defaults to citizen and not resolving when user is null', () => {
+    const { result } = renderHook(() => useAppRole(null));
+
+    expect(result.current.role).toBe('citizen');
+    expect(result.current.isOperational).toBe(false);
+    expect(result.current.isAdmin).toBe(false);
+    expect(result.current.isSignedIn).toBe(false);
+    expect(result.current.isResolving).toBe(false);
+  });
+
+  it('user_metadata.role cannot elevate role', () => {
+    const forged = userWith({}, { role: 'admin' });
+    const { result } = renderHook(() => useAppRole(forged));
+
+    expect(result.current.role).toBe('citizen');
+    expect(result.current.isOperational).toBe(false);
+    expect(result.current.isAdmin).toBe(false);
   });
 });

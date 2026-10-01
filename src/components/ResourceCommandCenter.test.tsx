@@ -9,11 +9,11 @@ function makeResourceRow(overrides: Row = {}): Row {
   return {
     id: 'res-pump-1',
     resource_type: 'water_pump',
-    name: 'BMC High-Capacity Dewatering Pump 1',
+    name: 'BMC Ward K-West High-Capacity Dewatering Pump 1',
     status: 'available',
     quantity: 2,
     available_quantity: 2,
-    zone_id: 'zone-juhu-1',
+    zone_id: 'zone-mumbai-kwest',
     latitude: 19.0988,
     longitude: 72.8267,
     capacity: null,
@@ -29,7 +29,7 @@ function makeAllocationRow(overrides: Row = {}): Row {
     id: 'alloc-1',
     resource_id: 'res-pump-1',
     incident_id: 'inc-1',
-    zone_id: 'zone-juhu-1',
+    zone_id: 'zone-mumbai-kwest',
     quantity: 1,
     status: 'pending',
     allocated_by: 'user-responder',
@@ -52,6 +52,8 @@ function fakeClient(options: {
   auditLogs?: Row[];
   compatibilities?: Row[];
   incidents?: Row[];
+  onDeleteResource?: (id: string) => void;
+  onDeleteAllocation?: (id: string) => void;
 } = {}) {
   const store: Record<string, Row[]> = {
     resources: [...(options.resources ?? [])],
@@ -98,6 +100,20 @@ function fakeClient(options: {
             return Promise.resolve({ data: row, error: null });
           },
         }),
+        delete: () => ({
+          eq: (col: string, val: unknown) => {
+            if (table === 'resources' && options.onDeleteResource) {
+              options.onDeleteResource(String(val));
+            }
+            if (table === 'resource_allocations' && options.onDeleteAllocation) {
+              options.onDeleteAllocation(String(val));
+            }
+            if (store[table]) {
+              store[table] = store[table].filter((item: any) => item[col] !== val);
+            }
+            return Promise.resolve({ data: null, error: null });
+          },
+        }),
       };
       return builder;
     },
@@ -109,6 +125,14 @@ function responderUser() {
   return {
     id: 'user-resp',
     app_metadata: { role: 'responder' },
+    user_metadata: {},
+  } as unknown as User;
+}
+
+function adminUser() {
+  return {
+    id: 'user-admin',
+    app_metadata: { role: 'admin' },
     user_metadata: {},
   } as unknown as User;
 }
@@ -126,22 +150,57 @@ beforeEach(() => {
 });
 
 describe('ResourceCommandCenter Component', () => {
-  it('renders restricted access notice for citizen user', async () => {
+  it('renders restricted access notice for citizen user (citizen → restricted)', async () => {
+    const comp: Row = {
+      id: 'comp-1',
+      resource_type: 'water_pump',
+      incident_type: 'flooding',
+      priority: 1,
+      notes: 'Ward dewatering pump',
+    };
+    const inc: Row = {
+      id: 'inc-1',
+      user_id: 'u1',
+      type: 'flooding',
+      description: 'Waterlogging at SV Road',
+      latitude: 19.0988,
+      longitude: 72.8267,
+      created_at: '2026-10-01T00:00:00.000Z',
+    };
+
     render(
       <ResourceCommandCenter
         language="en"
         user={citizenUser()}
-        client={fakeClient({ resources: [makeResourceRow()] })}
+        client={fakeClient({
+          resources: [makeResourceRow()],
+          incidents: [inc],
+          compatibilities: [comp],
+        })}
       />
     );
 
+    // Citizen should see restricted notice and urban title
     expect(await screen.findByTestId('resource-role-notice')).toBeInTheDocument();
     expect(screen.getByText('Operational Access Required')).toBeInTheDocument();
-    // Citizen should NOT see Register Resource button
+    expect(screen.getByText('Urban Resource Command Center')).toBeInTheDocument();
+
+    // Citizen should NOT see operational header badge
+    expect(screen.queryByTestId('operational-role-badge')).not.toBeInTheDocument();
+
+    // Citizen should NOT see Register Resource or Allocate Resource buttons
     expect(screen.queryByText('Register Resource')).not.toBeInTheDocument();
+    expect(screen.queryByText('Allocate Resource')).not.toBeInTheDocument();
+
+    // In recommendations tab, citizen should see suggestions but NO operational approve/reject buttons
+    const recTab = await screen.findByRole('tab', { name: /Suggested Allocations/i });
+    fireEvent.click(recTab);
+    expect(await screen.findByTestId('recommendation-list')).toBeInTheDocument();
+    expect(screen.queryByText('Approve')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reject')).not.toBeInTheDocument();
   });
 
-  it('renders operational controls for responder user', async () => {
+  it('renders operational controls for responder user (responder → operational access)', async () => {
     render(
       <ResourceCommandCenter
         language="en"
@@ -150,9 +209,53 @@ describe('ResourceCommandCenter Component', () => {
       />
     );
 
+    // Operational badge indicates RESPONDER
+    const badge = await screen.findByTestId('operational-role-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('OPERATIONAL ACCESS · responder');
+
+    // Operational actions are available
+    expect(await screen.findByText('Register Resource')).toBeInTheDocument();
+    expect(screen.getByText('Allocate Resource')).toBeInTheDocument();
+    expect(screen.getByText('Allocate')).toBeInTheDocument();
+    expect(screen.queryByTestId('resource-role-notice')).not.toBeInTheDocument();
+
+    // Responder does NOT have admin delete permissions
+    expect(screen.queryByTestId('delete-resource-res-pump-1')).not.toBeInTheDocument();
+  });
+
+  it('renders full operational and administrative access for admin user (admin → full operational access)', async () => {
+    const res = makeResourceRow({ id: 'res-pump-1' });
+    const alloc = makeAllocationRow({ id: 'alloc-1' });
+
+    render(
+      <ResourceCommandCenter
+        language="en"
+        user={adminUser()}
+        client={fakeClient({
+          resources: [res],
+          allocations: [alloc],
+        })}
+      />
+    );
+
+    // Operational badge indicates ADMIN
+    const badge = await screen.findByTestId('operational-role-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('OPERATIONAL ACCESS · admin');
+
+    // Full operational controls
     expect(await screen.findByText('Register Resource')).toBeInTheDocument();
     expect(screen.getByText('Allocate Resource')).toBeInTheDocument();
     expect(screen.queryByTestId('resource-role-notice')).not.toBeInTheDocument();
+
+    // Admin has delete resource capability in inventory table
+    expect(await screen.findByTestId('delete-resource-res-pump-1')).toBeInTheDocument();
+
+    // Admin has delete allocation capability in allocations table
+    const allocTab = await screen.findByRole('tab', { name: /Live Deployments & Allocations/i });
+    fireEvent.click(allocTab);
+    expect(await screen.findByTestId('delete-allocation-alloc-1')).toBeInTheDocument();
   });
 
   it('displays honest empty state when no resources are registered in database', async () => {
@@ -188,11 +291,11 @@ describe('ResourceCommandCenter Component', () => {
     expect(screen.getByText('4')).toBeInTheDocument();
   });
 
-  it('renders recommendations tab with explainable rule-based allocations', async () => {
+  it('renders recommendations tab with explainable rule-based allocations and urban ward context', async () => {
     const res = makeResourceRow({
       id: 'pump-1',
       resource_type: 'water_pump',
-      name: 'BMC Flood Dewatering Pump',
+      name: 'BMC Ward K-West Dewatering Unit',
       available_quantity: 1,
       status: 'available',
     });
@@ -200,7 +303,7 @@ describe('ResourceCommandCenter Component', () => {
       id: 'inc-flood-1',
       user_id: 'citizen-1',
       type: 'flooding',
-      description: 'Severe flood at Juhu Tara Road',
+      description: 'Severe waterlogging at SV Road and Link Road Junction',
       latitude: 19.0988,
       longitude: 72.8267,
       created_at: '2026-10-01T00:00:00.000Z',
@@ -210,7 +313,7 @@ describe('ResourceCommandCenter Component', () => {
       resource_type: 'water_pump',
       incident_type: 'flooding',
       priority: 1,
-      notes: 'Primary pump for flood water removal',
+      notes: 'Primary municipal pump for flood water removal',
     };
 
     render(
@@ -230,7 +333,7 @@ describe('ResourceCommandCenter Component', () => {
     fireEvent.click(tab);
 
     expect(await screen.findByTestId('recommendation-list')).toBeInTheDocument();
-    expect(screen.getByText(/BMC Flood Dewatering Pump/)).toBeInTheDocument();
+    expect(screen.getByText(/BMC Ward K-West Dewatering Unit/)).toBeInTheDocument();
     expect(screen.getByText(/Priority 1 Suggestion/i)).toBeInTheDocument();
     expect(screen.getByText('Approve')).toBeInTheDocument();
     expect(screen.getByText('Reject')).toBeInTheDocument();

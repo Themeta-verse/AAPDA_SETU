@@ -8,9 +8,10 @@ interface MobileEmergencyAlertProps {
   language: Language;
   riskLevel: RiskLevel;
   onViewAlerts: () => void;
+  locationName?: string;
 }
 
-export function MobileEmergencyAlert({ language, riskLevel, onViewAlerts }: MobileEmergencyAlertProps) {
+export function MobileEmergencyAlert({ language, riskLevel, onViewAlerts, locationName }: MobileEmergencyAlertProps) {
   const t = translations[language];
   const [dismissed, setDismissed] = useState(false);
 
@@ -39,7 +40,7 @@ export function MobileEmergencyAlert({ language, riskLevel, onViewAlerts }: Mobi
                   {t.mobileAlertTitle}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {riskLevel === 'critical' ? t.critical : t.high} — {t.juhuBeach}
+                  {riskLevel === 'critical' ? t.critical : t.high} — {locationName || t.juhuBeach}
                 </p>
               </div>
             </div>

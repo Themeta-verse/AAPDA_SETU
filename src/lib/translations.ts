@@ -12,8 +12,8 @@ export const languageNames: Record<Language, string> = {
 export const translations: Record<Language, Record<string, string>> = {
   en: {
     title: 'BayWatch',
-    subtitle: 'Juhu Coastal Disaster Alert System',
-    tagline: 'Real-time coastal monitoring and multilingual emergency guidance for Juhu Beach, Mumbai.',
+    subtitle: 'Urban & Coastal Disaster Intelligence & Response',
+    tagline: 'Real-time multi-hazard monitoring and multilingual emergency response guidance for urban areas and coastal zones.',
     viewAlerts: 'View Current Alerts',
     startMockDrill: 'Start Mock Drill',
     currentStatus: 'Current Status',
@@ -128,8 +128,8 @@ export const translations: Record<Language, Record<string, string>> = {
   },
   hi: {
     title: 'बेवॉच',
-    subtitle: 'जुहू तटीय आपदा चेतावनी प्रणाली',
-    tagline: 'जुहू बीच, मुंबई के लिए वास्तविक समय तटीय निगरानी और बहुभाषी आपातकालीन मार्गदर्शन।',
+    subtitle: 'शहरी एवं तटीय आपदा सतर्कता व प्रतिक्रिया प्रणाली',
+    tagline: 'शहरी और तटीय क्षेत्रों के लिए वास्तविक समय बहु-आपदा निगरानी और बहुभाषी आपातकालीन मार्गदर्शन।',
     viewAlerts: 'वर्तमान अलर्ट देखें',
     startMockDrill: 'मॉक ड्रिल शुरू करें',
     currentStatus: 'वर्तमान स्थिति',
@@ -235,8 +235,8 @@ export const translations: Record<Language, Record<string, string>> = {
   },
   mr: {
     title: 'बेवॉच',
-    subtitle: 'जुहू किनारपट्टी आपत्ती सतर्कता प्रणाली',
-    tagline: 'जुहू बीच, मुंबईसाठी रिअल-टाइम किनारपट्टी निरीक्षण आणि बहुभाषिक आपत्कालीन मार्गदर्शन.',
+    subtitle: 'शहरी व किनारपट्टी आपत्ती सतर्कता प्रणाली',
+    tagline: 'शहरी आणि किनारपट्टी भागांसाठी रिअल-टाइम बहु-धोका निरीक्षण आणि बहुभाषिक आपत्कालीन मार्गदर्शन.',
     viewAlerts: 'सध्याचे अलर्ट पहा',
     startMockDrill: 'मॉक ड्रिल सुरू करा',
     currentStatus: 'सध्याची स्थिती',
@@ -342,8 +342,8 @@ export const translations: Record<Language, Record<string, string>> = {
   },
   gu: {
     title: 'બેવોચ',
-    subtitle: 'જુહુ દરિયાકાંઠા આપત્તિ ચેતવણી સિસ્ટમ',
-    tagline: 'જુહુ બીચ, મુંબઈ માટે રીઅલ-ટાઈમ દરિયાકાંઠા નિરીક્ષણ અને બહુભાષી કટોકટી માર્ગદર્શન.',
+    subtitle: 'શહેરી અને દરિયાકાંઠા આપત્તિ ચેતવણી સિસ્ટમ',
+    tagline: 'શહેરી અને દરિયાકાંઠા વિસ્તારો માટે રીઅલ-ટાઈમ બહુ-જોખમ નિરીક્ષણ અને બહુભાષી કટોકટી માર્ગદર્શન.',
     viewAlerts: 'વર્તમાન ચેતવણીઓ જુઓ',
     startMockDrill: 'મોક ડ્રિલ શરૂ કરો',
     currentStatus: 'વર્તમાન સ્થિતિ',

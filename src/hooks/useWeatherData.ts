@@ -6,8 +6,8 @@ import {
 import { LIVE_MAX_AGE_MS } from '@/integrations/adapters/freshness';
 import type { MarineHourlyPoint, NormalizedMarine } from '@/integrations/adapters/types';
 
-// Juhu Beach coordinates — the single observation point for marine data.
-const JUHU_COORDS = { latitude: 19.1075, longitude: 72.8263 };
+/** Default coastal observation coordinates (Mumbai Coast) */
+export const DEFAULT_COASTAL_COORDS = { latitude: 19.1075, longitude: 72.8263 };
 
 export type { MarineHourlyPoint, NormalizedMarine } from '@/integrations/adapters/types';
 
@@ -20,22 +20,64 @@ export interface MarineState {
 /**
  * Marine observation state.
  *
- * The adapter owns fetching, validation and normalisation; this hook only
- * owns the React lifecycle. When a fetch fails we keep the last real reading
- * and re-derive freshness from its `fetchedAt`, so the source ages into
- * `stale` and then `unavailable` instead of being silently frozen as live.
+ * Supports dynamic urban location coordinates. If the selected zone is inland,
+ * marine reading is safely held as 'unavailable' without issuing invalid marine API queries.
  */
-export function useWeatherData(intervalMs = LIVE_MAX_AGE_MS): MarineState {
+export function useWeatherData(
+  intervalMs = LIVE_MAX_AGE_MS,
+  coords = DEFAULT_COASTAL_COORDS,
+  isCoastal = true
+): MarineState {
   const [marine, setMarine] = useState<NormalizedMarine>(() =>
-    emptyMarineReading(JUHU_COORDS)
+    emptyMarineReading(coords)
   );
   const [error, setError] = useState<string | null>(null);
 
   const fetchWeather = useCallback(async () => {
-    const reading = await fetchMarineReading(JUHU_COORDS);
+    if (!isCoastal) {
+      try {
+        const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code,surface_pressure,precipitation_probability`;
+        const res = await fetch(forecastUrl);
+        if (res.ok) {
+          const body = await res.json();
+          const current = body?.current ?? {};
+          const nowStr = new Date().toISOString();
+          setMarine({
+            status: 'live',
+            fetchedAt: nowStr,
+            source: {
+              id: 'open-meteo-weather',
+              label: 'Open-Meteo Forecast',
+              authority: 'official',
+              url: forecastUrl,
+              observedAt: current.time ?? null,
+            },
+            waveHeight: null,
+            waveDirection: null,
+            wavePeriod: null,
+            hourly: [],
+            windSpeed: typeof current.wind_speed_10m === 'number' ? current.wind_speed_10m : null,
+            windDirection: typeof current.wind_direction_10m === 'number' ? current.wind_direction_10m : null,
+            rainProbability: typeof current.precipitation_probability === 'number' ? current.precipitation_probability : null,
+            temperature: typeof current.temperature_2m === 'number' ? current.temperature_2m : null,
+            pressure: typeof current.surface_pressure === 'number' ? current.surface_pressure : null,
+            error: null,
+          });
+          setError(null);
+          return;
+        }
+      } catch (e) {
+        // Fallback to offline / unavailable empty reading
+      }
+      setMarine(emptyMarineReading(coords));
+      setError(null);
+      return;
+    }
+
+    const reading = await fetchMarineReading(coords);
     setMarine(reading);
     setError(reading.error ? reading.error.message : null);
-  }, []);
+  }, [coords.latitude, coords.longitude, isCoastal]);
 
   useEffect(() => {
     fetchWeather();

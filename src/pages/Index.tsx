@@ -2,10 +2,13 @@ import { useState, useRef } from 'react';
 import { type Language } from '@/lib/translations';
 import { useMonitoring } from '@/hooks/useMonitoring';
 import { useAuth } from '@/hooks/useAuth';
+import { useAppRole } from '@/hooks/useAppRole';
 import { useSMSAlert } from '@/hooks/useSMSAlert';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { useOfflineIncidentQueue } from '@/hooks/useOfflineIncidentQueue';
+import { useUrbanContext } from '@/hooks/useUrbanContext';
 import { getAlerts, type MonitoringData } from '@/lib/monitoringData';
+import { LocationSelector } from '@/components/LocationSelector';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { HeroSection } from '@/components/HeroSection';
@@ -26,35 +29,94 @@ import { LocationTracker } from '@/components/LocationTracker';
 import { CitizenReporting } from '@/components/CitizenReporting';
 import { IncidentIntelligence } from '@/components/IncidentIntelligence';
 import { ResourceCommandCenter } from '@/components/ResourceCommandCenter';
+import { OperationalUserManagement } from '@/components/OperationalUserManagement';
 import { DataSourcesFooter } from '@/components/DataSourcesFooter';
-import { LogOut, User, Bell, CheckCircle, AlertCircle, FlaskConical, RefreshCw, Wifi, WifiOff, Clock, Upload } from 'lucide-react';
+import { LogOut, User, Bell, CheckCircle, AlertCircle, FlaskConical, RefreshCw, Wifi, WifiOff, Clock, Upload, Shield, Radio } from 'lucide-react';
 
 const Index = () => {
   const [language, setLanguage] = useState<Language>('en');
-  const { data, alerts, clock, marine, earthquakes, sourceStatus } = useMonitoring(8000);
-  const { user, signOut } = useAuth();
+  const urban = useUrbanContext();
+  const monitoringCoords = { latitude: urban.context.latitude, longitude: urban.context.longitude };
+  const { data, alerts, clock, marine, earthquakes, sourceStatus } = useMonitoring(
+    8000,
+    monitoringCoords,
+    urban.context.isCoastal
+  );
+  const { user, loading: authLoading, signOut } = useAuth();
+  const { role, isOperational, isResolving } = useAppRole(user);
   const { isMonitoring, lastAlertSent, lastAlertEvent, lastAlertTestMode, error: smsError, clearError, testSMSAlert, riskZones } = useSMSAlert();
   const { isOnline, status: connectionStatus } = useNetworkStatus();
   const { stats: queueStats } = useOfflineIncidentQueue();
   const alertsRef = useRef<HTMLDivElement>(null);
   const [activeScenario, setActiveScenario] = useState<ScenarioType>(null);
+  // Role-specific workspace state:
+  // - Operational users (responder, admin) enter the OPERATIONAL WORKSPACE as their PRIMARY experience.
+  // - Citizens enter the PUBLIC CITIZEN DASHBOARD as their experience.
+  // - Operational users can optionally preview the citizen view, but their primary workspace is always operational.
+  const [previewCitizenView, setPreviewCitizenView] = useState<boolean>(false);
+  const isOperationalWorkspace = isOperational && !previewCitizenView;
+
+  // Development-only diagnostic trace (as requested in Step 1)
+  if (import.meta.env.DEV && user) {
+    console.log('[BayWatch Role/Workspace Routing Diagnostic]', {
+      email: user.email,
+      app_metadata: user.app_metadata,
+      app_metadata_role: user.app_metadata?.role,
+      resolvedRole: role,
+      isOperational,
+      isAdmin: role === 'admin',
+      isSignedIn: !!user,
+      isResolving,
+      authLoading,
+      chosenWorkspace: isOperationalWorkspace ? 'OPERATIONAL ADMINISTRATION/RESPONSE WORKSPACE' : 'CITIZEN DASHBOARD',
+    });
+  }
+
+  // STEP 4: Prevent premature rendering of citizen dashboard while role is still resolving.
+  if (authLoading || (user && isResolving)) {
+    return (
+      <div
+        className="min-h-screen bg-background flex flex-col items-center justify-center p-4"
+        data-testid="role-resolution-loading"
+      >
+        <div className="flex flex-col items-center text-center space-y-4 max-w-sm">
+          <div className="relative">
+            <div className="w-12 h-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+            <Shield className="w-5 h-5 text-primary absolute inset-0 m-auto" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-sm font-bold text-foreground tracking-wide uppercase">
+              Verifying Authorization
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Resolving operational workspace permissions...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const scrollToAlerts = () => {
     alertsRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const activeData: MonitoringData = activeScenario ? getScenarioData(activeScenario)! : data;
-  const activeAlerts = activeScenario ? getAlerts(activeData) : alerts;
+  const activeAlerts = activeScenario ? getAlerts(activeData, undefined, urban.context.isCoastal) : alerts;
 
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
+  const displayLocation = urban.context.zoneName
+    ? `${urban.context.zoneName} (${urban.context.city})`
+    : urban.context.city;
 
   return (
-    <div className="min-h-screen bg-background" role="main">
+    <div className="min-h-screen bg-background">
       {/* Emergency Broadcast Banner */}
       <EmergencyBroadcastBanner
         language={language}
         riskLevel={activeData.riskLevel}
         activeScenario={activeScenario}
+        locationName={displayLocation}
       />
 
       {/* Top bar */}
@@ -129,10 +191,41 @@ const Index = () => {
                 TEST SMS
               </button>
             )}
+            {/* Operational Navigation Link */}
+            {isOperational && (
+              <button
+                onClick={() => {
+                  setPreviewCitizenView(false);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-colors shadow-sm ${
+                  !previewCitizenView
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20'
+                }`}
+                title={`Operational Workspace (${role})`}
+                data-testid="operational-nav-badge"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Operations ·</span>
+                <span className="px-1.5 py-0.2 rounded text-[10px] bg-background/20 font-mono uppercase">
+                  {role}
+                </span>
+              </button>
+            )}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-secondary text-xs">
               <User className="w-3 h-3 text-primary" />
               <span className="text-muted-foreground max-w-[100px] truncate">{userName}</span>
             </div>
+            <LocationSelector
+              context={urban.context}
+              cities={urban.cities}
+              cityZones={urban.cityZones}
+              isGpsActive={urban.isGpsActive}
+              onSelectCity={urban.setCity}
+              onSelectZone={urban.setZone}
+              onToggleGps={urban.toggleGps}
+            />
             <ThemeToggle />
             <LanguageSelector language={language} onChange={setLanguage} />
             <button
@@ -147,11 +240,39 @@ const Index = () => {
         </div>
       </header>
 
+      {/* Preview mode banner when operational users view public citizen dashboard */}
+      {isOperational && previewCitizenView && (
+        <div className="bg-primary/10 border-b border-primary/20 py-2.5 px-4" data-testid="preview-mode-banner">
+          <div className="container flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground font-bold text-[10px] tracking-wide uppercase">
+                Preview Mode
+              </span>
+              <span className="text-muted-foreground text-[11px]">
+                Previewing Public Citizen Dashboard as <strong className="text-foreground uppercase">{role}</strong>
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setPreviewCitizenView(false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-1.5"
+              data-testid="return-operational-btn"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              Return to Operational Workspace
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Mobile emergency alert */}
       <MobileEmergencyAlert
         language={language}
         riskLevel={activeData.riskLevel}
         onViewAlerts={scrollToAlerts}
+        locationName={displayLocation}
       />
 
       {/* SMS Alert Status Toast */}
@@ -193,58 +314,184 @@ const Index = () => {
         </div>
       )}
 
-      <HeroSection
-        language={language}
-        riskLevel={activeData.riskLevel}
-        clock={clock}
-        onViewAlerts={scrollToAlerts}
-        isSimulation={!!activeScenario}
-        sourceStatus={sourceStatus}
-      />
+      {isOperationalWorkspace ? (
+        <main className="container space-y-8 py-6" data-testid="operational-workspace">
+          {/* Operations Hub Breadcrumb & Info */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-card border border-primary/20 shadow-sm">
+            <div>
+              <div className="flex items-center gap-2 text-primary font-semibold text-xs uppercase tracking-wider">
+                <Radio className="w-4 h-4 animate-pulse" />
+                <span data-testid="workspace-role-indicator">
+                  {role === 'admin'
+                    ? 'OPERATIONAL ADMINISTRATION WORKSPACE · ADMIN CONSOLE'
+                    : 'OPERATIONAL RESPONSE WORKSPACE · RESPONDER CONSOLE'}
+                </span>
+              </div>
+              <h1 className="text-2xl font-black text-foreground mt-1">
+                {role === 'admin'
+                  ? 'Municipal Disaster Operations & Resource Administration'
+                  : 'Tactical Disaster Response & Resource Command Center'}
+              </h1>
+              <p className="text-xs text-muted-foreground mt-1">
+                Active Ward / Zone: <strong className="text-foreground">{displayLocation}</strong> · Persistent Supabase authorization
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setPreviewCitizenView(true);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="px-3.5 py-2 rounded-xl border border-border bg-secondary text-foreground text-xs font-semibold hover:bg-secondary/80 transition-colors flex items-center gap-1.5"
+                data-testid="preview-citizen-btn"
+                title="Preview what citizens see on the public dashboard"
+              >
+                <span>Preview Public Citizen Dashboard</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
 
-      <MonitoringDashboard data={activeData} language={language} clock={clock} marine={marine} earthquakes={earthquakes} />
+          {/* Operational Quick Metrics / Status Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-xl border border-border bg-card/60">
+              <span className="text-[11px] text-muted-foreground uppercase font-medium">Urban Scope</span>
+              <p className="text-xs font-bold text-foreground mt-1 truncate" title={displayLocation}>
+                {displayLocation}
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl border border-border bg-card/60">
+              <span className="text-[11px] text-muted-foreground uppercase font-medium">Threat Level</span>
+              <p className={`text-xs font-bold mt-1 uppercase ${
+                activeData.riskLevel === 'high' || activeData.riskLevel === 'severe'
+                  ? 'text-danger'
+                  : activeData.riskLevel === 'moderate'
+                  ? 'text-warning'
+                  : 'text-safe'
+              }`}>
+                {activeData.riskLevel}
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl border border-border bg-card/60">
+              <span className="text-[11px] text-muted-foreground uppercase font-medium">Network Link</span>
+              <p className="text-xs font-bold text-foreground mt-1 flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full ${connectionStatus === 'online' ? 'bg-safe' : 'bg-warning'}`} />
+                {connectionStatus.toUpperCase()}
+              </p>
+            </div>
+            <div className="p-3.5 rounded-xl border border-border bg-card/60">
+              <span className="text-[11px] text-muted-foreground uppercase font-medium">SMS Dispatch</span>
+              <p className="text-xs font-bold text-foreground mt-1">
+                {isMonitoring ? 'ACTIVE' : 'STANDBY'}
+              </p>
+            </div>
+          </div>
 
-      {/* GPS Location & Distance */}
-      <LocationTracker language={language} riskLevel={activeData.riskLevel} />
+          {/* Operational Resource Command Center directly at top */}
+          <ResourceCommandCenter
+            language={language}
+            user={user}
+            riskZones={riskZones}
+            currentRiskLevel={activeData.riskLevel}
+          />
 
-      <TideForecast language={language} marine={marine} />
+          {/* Administrator-Only: Operational User & Role Management */}
+          {role === 'admin' && (
+            <OperationalUserManagement language={language} user={user} />
+          )}
 
-      <div ref={alertsRef}>
-        <AlertCardsSection alerts={activeAlerts} language={language} />
-      </div>
+          {/* Incident Intelligence */}
+          <IncidentIntelligence language={language} user={user} />
 
-      <ScenarioSimulation
-        language={language}
-        activeScenario={activeScenario}
-        onSimulate={setActiveScenario}
-      />
+          {/* Evacuation Map */}
+          <EvacuationMap
+            language={language}
+            zoneName={urban.context.zoneName}
+            cityName={urban.context.city}
+            wardName={urban.context.ward || undefined}
+            centerLat={urban.context.latitude}
+            centerLon={urban.context.longitude}
+            isCoastal={urban.context.isCoastal}
+            safeLocations={urban.safeLocations}
+          />
 
-      <VoiceAlertGuide language={language} riskLevel={activeData.riskLevel} />
+          {/* Emergency Contacts */}
+          <EmergencyContacts language={language} />
+        </main>
+      ) : (
+        <main data-testid="citizen-dashboard">
+          <HeroSection
+            language={language}
+            riskLevel={activeData.riskLevel}
+            clock={clock}
+            onViewAlerts={scrollToAlerts}
+            isSimulation={!!activeScenario}
+            sourceStatus={sourceStatus}
+            locationName={displayLocation}
+          />
 
-      <MockDrill language={language} />
+          <MonitoringDashboard
+            data={activeData}
+            language={language}
+            clock={clock}
+            marine={marine}
+            earthquakes={earthquakes}
+            locationName={displayLocation}
+            isCoastal={urban.context.isCoastal}
+          />
 
-      <EvacuationMap language={language} />
+          {/* GPS Location & Distance */}
+          <LocationTracker
+            language={language}
+            riskLevel={activeData.riskLevel}
+            zoneName={urban.context.zoneName}
+            targetLat={urban.context.latitude}
+            targetLon={urban.context.longitude}
+            nearestSafeLocation={urban.safeLocations[0] || null}
+          />
 
-      {/* Citizen Reporting */}
-      <CitizenReporting language={language} userId={user?.id} />
+          <TideForecast
+            language={language}
+            marine={marine}
+            isCoastal={urban.context.isCoastal}
+            locationName={displayLocation}
+          />
 
-      {/* Operational incident view. The component itself checks the role claim
-          and renders an explicit access notice for non-operational users, so
-          it is always mounted and always states which view you are seeing. */}
-      <IncidentIntelligence language={language} user={user} />
+          <div ref={alertsRef}>
+            <AlertCardsSection alerts={activeAlerts} language={language} />
+          </div>
 
-      {/* Operational Resource Command Center */}
-      <ResourceCommandCenter
-        language={language}
-        riskZones={riskZones}
-        currentRiskLevel={activeData.riskLevel}
-      />
+          <ScenarioSimulation
+            language={language}
+            activeScenario={activeScenario}
+            onSimulate={setActiveScenario}
+          />
 
-      <TouristMode language={language} />
+          <VoiceAlertGuide language={language} riskLevel={activeData.riskLevel} />
 
-      <GovernmentGuidelines language={language} />
+          <MockDrill language={language} />
 
-      <EmergencyContacts language={language} />
+          <EvacuationMap
+            language={language}
+            zoneName={urban.context.zoneName}
+            cityName={urban.context.city}
+            wardName={urban.context.ward || undefined}
+            centerLat={urban.context.latitude}
+            centerLon={urban.context.longitude}
+            isCoastal={urban.context.isCoastal}
+            safeLocations={urban.safeLocations}
+          />
+
+          {/* Citizen Reporting */}
+          <CitizenReporting language={language} userId={user?.id} />
+
+          <TouristMode language={language} />
+
+          <GovernmentGuidelines language={language} />
+
+          <EmergencyContacts language={language} />
+        </main>
+      )}
 
       {/* Data Sources & System Status */}
       <DataSourcesFooter
@@ -255,8 +502,8 @@ const Index = () => {
 
       {/* Footer */}
       <footer className="container py-8 text-center text-xs text-muted-foreground border-t border-border mt-2" role="contentinfo">
-        <p className="font-semibold text-foreground mb-1">BayWatch – Juhu Coastal Disaster Alert System</p>
-        <p>Multilingual coastal disaster alert platform © {new Date().getFullYear()}</p>
+        <p className="font-semibold text-foreground mb-1">BayWatch – Urban Disaster Intelligence & Response</p>
+        <p>Multilingual urban & coastal disaster alert platform © {new Date().getFullYear()}</p>
         <p className="mt-1">For educational and awareness purposes. Always follow official NDMA guidelines.</p>
         <p className="mt-2 text-[10px] text-muted-foreground/60">
           Data: Open-Meteo · Open-Meteo Marine · USGS

@@ -1,54 +1,170 @@
 import { motion } from 'framer-motion';
-import { Map, MapPin, Building, Shield, Navigation, ExternalLink, Hospital, Siren, ArrowUpFromLine } from 'lucide-react';
+import {
+  Map,
+  MapPin,
+  Building,
+  Shield,
+  Navigation,
+  ExternalLink,
+  Hospital,
+  Siren,
+  Flame,
+  Users,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Compass,
+} from 'lucide-react';
 import { type Language, translations } from '@/lib/translations';
+import type { SafeLocation } from '@/lib/urbanContext';
 
 interface EvacuationMapProps {
   language: Language;
+  zoneName?: string;
+  cityName?: string;
+  wardName?: string;
+  centerLat?: number;
+  centerLon?: number;
+  isCoastal?: boolean;
+  safeLocations?: SafeLocation[];
 }
 
 const mapLabels: Record<string, Record<string, string>> = {
-  en: { ocean: 'Arabian Sea', beach: 'Juhu Beach', safeZone: 'Safe Zone (High Ground)', services: 'Emergency Services', evacRoute: 'Evacuation Route', zoneA: 'Safe Zone A – JVPD Ground', zoneB: 'Safe Zone B – Mithibai College', police: 'Juhu Police Station', hospital: 'Cooper Hospital', openMap: 'Open Full Map', dangerZone: 'Danger Zone (Beach)', highGround: 'High Ground' },
-  hi: { ocean: 'अरब सागर', beach: 'जुहू बीच', safeZone: 'सुरक्षित क्षेत्र (ऊंचा भूमि)', services: 'आपातकालीन सेवाएं', evacRoute: 'निकासी मार्ग', zoneA: 'सुरक्षित क्षेत्र A – JVPD मैदान', zoneB: 'सुरक्षित क्षेत्र B – मिठीबाई कॉलेज', police: 'जुहू पुलिस स्टेशन', hospital: 'कूपर अस्पताल', openMap: 'पूरा नक्शा खोलें', dangerZone: 'खतरा क्षेत्र', highGround: 'ऊंचा भूमि' },
-  mr: { ocean: 'अरबी समुद्र', beach: 'जुहू बीच', safeZone: 'सुरक्षित क्षेत्र (उंच भूमी)', services: 'आपत्कालीन सेवा', evacRoute: 'निर्वासन मार्ग', zoneA: 'सुरक्षित क्षेत्र A – JVPD मैदान', zoneB: 'सुरक्षित क्षेत्र B – मिठीबाई कॉलेज', police: 'जुहू पोलीस स्टेशन', hospital: 'कूपर रुग्णालय', openMap: 'पूर्ण नकाशा उघडा', dangerZone: 'धोक्याचे क्षेत्र', highGround: 'उंच भूमी' },
-  gu: { ocean: 'અરબી સમુદ્ર', beach: 'જુહુ બીચ', safeZone: 'સુરક્ષિત ઝોન (ઊંચી જમીન)', services: 'ઇમરજન્સી સેવાઓ', evacRoute: 'ખાલી કરાવવાનો માર્ગ', zoneA: 'સુરક્ષિત ઝોન A – JVPD મેદાન', zoneB: 'સુરક્ષિત ઝોન B – મિથીબાઈ કૉલેજ', police: 'જુહુ પોલીસ સ્ટેશન', hospital: 'કૂપર હોસ્પિટલ', openMap: 'સંપૂર્ણ નકશો ખોલો', dangerZone: 'ખતરા ઝોન', highGround: 'ઊંચી જમીન' },
+  en: {
+    openMap: 'Open Full Map',
+    directions: 'Directions',
+    capacity: 'Capacity',
+    verified: 'Verified Shelter / Safe Location',
+    emptyTitle: 'No configured evacuation locations for this area.',
+    emptySubtitle: 'Safe assembly points, relief centers, and designated shelters have not been configured for this zone. In an immediate emergency, move to elevated ground or follow local disaster authority instructions.',
+    coastalHazard: 'Coastal Surge Hazard Area',
+    inlandHazard: 'Low-Lying Urban Flood / Waterlogging Risk',
+  },
+  hi: {
+    openMap: 'पूरा नक्शा खोलें',
+    directions: 'दिशा-निर्देश',
+    capacity: 'क्षमता',
+    verified: 'सत्यापित सुरक्षित स्थल / आश्रय',
+    emptyTitle: 'इस क्षेत्र के लिए कोई निकासी स्थल कॉन्फ़िगर नहीं है।',
+    emptySubtitle: 'इस क्षेत्र के लिए सुरक्षित सभा स्थल या राहत केंद्र कॉन्फ़िगर नहीं किए गए हैं। आपातकाल में ऊंचे स्थान पर जाएं।',
+    coastalHazard: 'तटीय लहर खतरा क्षेत्र',
+    inlandHazard: 'निचला शहरी बाढ़ / जलभराव जोखिम',
+  },
+  mr: {
+    openMap: 'पूर्ण नकाशा उघडा',
+    directions: 'मार्गदर्शन',
+    capacity: 'क्षमता',
+    verified: 'सत्यापित सुरक्षित ठिकाण / निवारा',
+    emptyTitle: 'या क्षेत्रासाठी कोणतीही निर्वासन स्थाने कॉन्फिगर केलेली नाहीत.',
+    emptySubtitle: 'या क्षेत्रासाठी सुरक्षित संमेलन स्थळे किंवा निवारे कॉन्फिगर केलेले नाहीत. आणीबाणीत उंच जागी जा.',
+    coastalHazard: 'किनारपट्टी लाट धोका क्षेत्र',
+    inlandHazard: 'सखल शहरी पूर / पाणी साचण्याचा धोका',
+  },
+  gu: {
+    openMap: 'સંપૂર્ણ નકશો ખોલો',
+    directions: 'દિશાઓ',
+    capacity: 'ક્ષમતા',
+    verified: 'ચકાસાયેલ સુરક્ષિત સ્થાન / આશ્રય',
+    emptyTitle: 'આ વિસ્તાર માટે કોઈ સ્થળાંતર સ્થળો ગોઠવેલા નથી.',
+    emptySubtitle: 'આ વિસ્તાર માટે સુરક્ષિત એસેમ્બલી પોઈન્ટ અથવા આશ્રયસ્થાનો ગોઠવેલા નથી.',
+    coastalHazard: 'દરિયાકાંઠાના મોજાંનું જોખમ ક્ષેત્ર',
+    inlandHazard: 'નીચાણવાળા શહેરી પૂર / પાણી ભરાવાનું જોખમ',
+  },
 };
 
-export function EvacuationMap({ language }: EvacuationMapProps) {
+function getLocationTypeIcon(type: SafeLocation['location_type']) {
+  switch (type) {
+    case 'hospital':
+    case 'medical_facility':
+      return Hospital;
+    case 'police_station':
+      return Siren;
+    case 'fire_station':
+      return Flame;
+    case 'emergency_assembly_point':
+      return Users;
+    case 'shelter':
+    case 'relief_center':
+    default:
+      return Building;
+  }
+}
+
+function getLocationTypeBadge(type: SafeLocation['location_type']) {
+  switch (type) {
+    case 'hospital':
+    case 'medical_facility':
+      return { label: 'Medical / Hospital', bg: 'bg-warning/10 text-warning border-warning/20' };
+    case 'police_station':
+      return { label: 'Police Station', bg: 'bg-primary/10 text-primary border-primary/20' };
+    case 'fire_station':
+      return { label: 'Fire Service', bg: 'bg-danger/10 text-danger border-danger/20' };
+    case 'emergency_assembly_point':
+      return { label: 'Assembly Point', bg: 'bg-safe/10 text-safe border-safe/20' };
+    case 'shelter':
+    case 'relief_center':
+    default:
+      return { label: 'Relief Shelter', bg: 'bg-safe/10 text-safe border-safe/20' };
+  }
+}
+
+export function EvacuationMap({
+  language,
+  zoneName = 'Juhu Coastal Zone',
+  cityName = 'Mumbai',
+  wardName = 'K-West',
+  centerLat = 19.0988,
+  centerLon = 72.8267,
+  isCoastal = true,
+  safeLocations = [],
+}: EvacuationMapProps) {
   const t = translations[language];
-  const ml = mapLabels[language];
+  const ml = mapLabels[language] || mapLabels.en;
 
-  const locations = [
-    { name: ml.beach, type: 'beach', x: 28, y: 58, icon: MapPin },
-    { name: ml.zoneA, type: 'safe', x: 55, y: 22, icon: Shield },
-    { name: ml.zoneB, type: 'safe', x: 72, y: 38, icon: Shield },
-    { name: ml.police, type: 'police', x: 45, y: 42, icon: Siren },
-    { name: ml.hospital, type: 'hospital', x: 76, y: 55, icon: Hospital },
-  ];
+  const deltaLat = 0.015;
+  const deltaLon = 0.018;
+  const minLon = (centerLon - deltaLon).toFixed(4);
+  const minLat = (centerLat - deltaLat).toFixed(4);
+  const maxLon = (centerLon + deltaLon).toFixed(4);
+  const maxLat = (centerLat + deltaLat).toFixed(4);
 
-  const osmUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=72.8100%2C19.0850%2C72.8450%2C19.1150&layer=mapnik&marker=19.0988%2C72.8267';
-  const osmLink = 'https://www.openstreetmap.org/?mlat=19.0988&mlon=72.8267#map=15/19.0988/72.8267';
+  const osmUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${minLon}%2C${minLat}%2C${maxLon}%2C${maxLat}&layer=mapnik&marker=${centerLat}%2C${centerLon}`;
+  const osmLink = `https://www.openstreetmap.org/?mlat=${centerLat}&mlon=${centerLon}#map=15/${centerLat}/${centerLon}`;
 
   return (
     <section id="evacuation" className="container py-8" aria-label={t.evacuationMap}>
-      <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
-        <Map className="w-6 h-6 text-primary" />
-        {t.evacuationMap}
-      </h2>
-      <p className="text-muted-foreground mb-6 text-sm">{t.evacuationDesc}</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Map className="w-6 h-6 text-primary" />
+            {t.evacuationMap}
+          </h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            {zoneName} · {wardName} ({cityName}) — {isCoastal ? ml.coastalHazard : ml.inlandHazard}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 font-mono">
+            {centerLat.toFixed(4)}°N, {centerLon.toFixed(4)}°E
+          </span>
+        </div>
+      </div>
 
-      {/* OpenStreetMap embed */}
-      <div className="glass-card rounded-2xl overflow-hidden border-border mb-4">
+      {/* OpenStreetMap dynamic embed */}
+      <div className="glass-card rounded-2xl overflow-hidden border-border mb-6">
         <div className="relative w-full h-[300px] sm:h-[400px]">
           <iframe
             src={osmUrl}
             className="absolute inset-0 w-full h-full border-0"
             loading="lazy"
-            title="Juhu Beach Evacuation Map"
+            title={`${zoneName} Map`}
             allowFullScreen
           />
         </div>
-        <div className="p-3 flex items-center justify-between border-t border-border/50">
-          <span className="text-xs text-muted-foreground">© OpenStreetMap contributors</span>
+        <div className="p-3 flex items-center justify-between border-t border-border/50 bg-card/60 backdrop-blur-sm">
+          <span className="text-xs text-muted-foreground">
+            © OpenStreetMap contributors · {zoneName} ({cityName})
+          </span>
           <a
             href={osmLink}
             target="_blank"
@@ -60,90 +176,93 @@ export function EvacuationMap({ language }: EvacuationMapProps) {
         </div>
       </div>
 
-      {/* Overlay evacuation diagram */}
-      <div className="glass-card rounded-2xl overflow-hidden border-border">
-        <div className="relative bg-gradient-to-br from-ocean/10 via-primary/5 to-card h-[340px] md:h-[420px]">
-          {/* Grid */}
-          <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="0.5" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#grid)" />
-          </svg>
-
-          {/* Ocean / Danger Zone */}
-          <div className="absolute left-0 top-0 bottom-0 w-[28%] bg-gradient-to-r from-danger/15 via-danger/8 to-transparent">
-            <div className="absolute bottom-4 left-4 text-[10px] text-danger/60 font-bold uppercase tracking-wider rotate-[-90deg] origin-bottom-left whitespace-nowrap">
-              ⚠ {ml.dangerZone}
-            </div>
-          </div>
-
-          {/* Safe High Ground Zone */}
-          <div className="absolute right-0 top-0 bottom-0 w-[35%] bg-gradient-to-l from-safe/8 to-transparent">
-            <div className="absolute top-4 right-4 flex items-center gap-1 text-[10px] text-safe/60 font-bold uppercase tracking-wider">
-              <ArrowUpFromLine className="w-3 h-3" />
-              {ml.highGround}
-            </div>
-          </div>
-
-          {/* Ocean label */}
-          <div className="absolute left-2 top-1/2 -translate-y-1/2">
-            <span className="text-xs text-primary/40 font-bold rotate-[-90deg] block whitespace-nowrap">{ml.ocean}</span>
-          </div>
-
-          {/* Evacuation routes */}
-          <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" fill="hsl(var(--safe))" />
-              </marker>
-            </defs>
-            {/* Route 1: Beach → Safe Zone A */}
-            <line x1="30%" y1="56%" x2="53%" y2="25%" stroke="hsl(var(--safe))" strokeWidth="3" strokeDasharray="8,5" markerEnd="url(#arrowhead)" opacity="0.7" />
-            {/* Route 2: Beach → Safe Zone B */}
-            <line x1="30%" y1="56%" x2="70%" y2="40%" stroke="hsl(var(--safe))" strokeWidth="3" strokeDasharray="8,5" markerEnd="url(#arrowhead)" opacity="0.7" />
-          </svg>
-
-          {/* Location markers */}
-          {locations.map((loc, i) => (
-            <motion.div
-              key={i}
-              initial={{ scale: 0 }}
-              whileInView={{ scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.15, type: 'spring' }}
-              className="absolute group"
-              style={{ left: `${loc.x}%`, top: `${loc.y}%`, transform: 'translate(-50%, -50%)' }}
-              role="img"
-              aria-label={loc.name}
-            >
-              <div className={`p-2.5 rounded-full border-2 ${
-                loc.type === 'beach' ? 'bg-danger/20 text-danger border-danger/40' :
-                loc.type === 'safe' ? 'bg-safe/20 text-safe border-safe/40' :
-                loc.type === 'police' ? 'bg-primary/20 text-primary border-primary/40' :
-                'bg-warning/20 text-warning border-warning/40'
-              }`}>
-                <loc.icon className="w-5 h-5" />
-              </div>
-              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 whitespace-nowrap bg-card/95 backdrop-blur-sm px-2.5 py-1.5 rounded-lg text-[10px] font-bold border border-border opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg">
-                {loc.name}
-              </div>
-            </motion.div>
-          ))}
-
-          {/* Legend */}
-          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 glass-card p-3 sm:p-4 rounded-xl text-[10px] sm:text-xs space-y-2">
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-danger/50 border border-danger/40" /> {ml.beach}</div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-safe/50 border border-safe/40" /> {ml.safeZone}</div>
-            <div className="flex items-center gap-2"><Siren className="w-3 h-3 text-primary" /> {ml.services}</div>
-            <div className="flex items-center gap-2"><Hospital className="w-3 h-3 text-warning" /> {ml.hospital}</div>
-            <div className="flex items-center gap-2">
-              <Navigation className="w-3 h-3 text-safe" /> {ml.evacRoute}
-            </div>
-          </div>
+      {/* Safe Locations & Shelters Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold flex items-center gap-2">
+            <Shield className="w-5 h-5 text-safe" />
+            Verified Safe Locations & Assembly Points ({safeLocations.length})
+          </h3>
         </div>
+
+        {safeLocations.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground border border-dashed rounded-2xl bg-card/40">
+            <Shield className="w-10 h-10 mx-auto mb-3 text-muted-foreground/40" />
+            <h4 className="font-semibold text-base text-foreground mb-1">
+              {ml.emptyTitle}
+            </h4>
+            <p className="text-xs max-w-lg mx-auto text-muted-foreground leading-relaxed">
+              {ml.emptySubtitle}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {safeLocations.map((loc) => {
+              const Icon = getLocationTypeIcon(loc.location_type);
+              const badge = getLocationTypeBadge(loc.location_type);
+              const directionsUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${centerLat}%2C${centerLon}%3B${loc.latitude}%2C${loc.longitude}`;
+
+              return (
+                <motion.div
+                  key={loc.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  className="glass-card p-4 rounded-xl border-border flex flex-col justify-between hover:border-primary/40 transition-colors"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-card border border-border text-primary">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <h4 className="font-semibold text-sm leading-tight text-foreground">
+                          {loc.name}
+                        </h4>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${badge.bg} whitespace-nowrap`}>
+                        {badge.label}
+                      </span>
+                    </div>
+
+                    {loc.address && (
+                      <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 flex-shrink-0 text-muted-foreground/70" />
+                        <span className="truncate">{loc.address}</span>
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground my-2">
+                      {loc.capacity && (
+                        <span className="font-mono">
+                          {ml.capacity}: <strong className="text-foreground">{loc.capacity}</strong>
+                        </span>
+                      )}
+                      <span className="font-mono text-muted-foreground/80">
+                        {loc.latitude.toFixed(4)}°N, {loc.longitude.toFixed(4)}°E
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-border/50 flex items-center justify-between mt-2">
+                    <span className="flex items-center gap-1 text-[11px] text-safe font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {loc.status === 'active' ? 'Operational' : 'Standby'}
+                    </span>
+                    <a
+                      href={directionsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-primary hover:underline font-semibold"
+                    >
+                      {ml.directions} <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );

@@ -389,4 +389,35 @@ Without these, all SMS deliveries remain in TEST MODE — no real SMS sent, no c
 * `npm run build` — **PASS** (11.39s, bundle generated cleanly)
 * `npm run test` — **PASS** (9 test files, 200 tests passing)
 * `npx tsc --noEmit` — **PASS** (0 type errors)
-* Merge conflict markers search (`<<<<<<<`, `=======`, `>>>>>>>`) — **0 found**
+* Merge conflict markers search (`<<<<<<<`, `=======`, `>>>>>>>`) — **0 found**
+
+---
+
+### 2026-10-01 — Operational Admin Bootstrap & Authoritative Admin User Management
+
+#### Files Created
+* `supabase/migrations/20261001170000_bootstrap_admin_account.sql` — Idempotent bootstrap provisioning for `admin123@gmail.com` (`role: 'admin'`, bcrypt hash), `public.profiles.email` column addition, and authoritative RPC functions: `admin_list_operational_users`, `admin_create_operational_user`, `admin_update_user_role`, `admin_revoke_operational_access`, `bootstrap_admin_account`.
+* `src/components/OperationalUserManagement.tsx` — Full-featured admin management UI allowing admins to view operational personnel, provision new Responders/Admins, promote/demote roles, and revoke operational access.
+* `src/components/OperationalUserManagement.test.tsx` — Unit test suite for `OperationalUserManagement` covering role-gating, user listing, role switching, provisioning, and access revocation.
+* `scripts/bootstrap-admin.mjs` — One-time CLI helper (`npm run bootstrap:admin`) for provisioning or verifying `admin123@gmail.com`.
+
+#### Files Modified
+* `src/pages/Index.tsx` — Mounted `<OperationalUserManagement />` within the Operational Administration Workspace (`role === 'admin'`).
+* `src/pages/Index.test.tsx` — Added tests verifying `OperationalUserManagement` rendering for admin, exclusion from responder and citizen, and bootstrap admin routing.
+* `src/integrations/supabase/types.ts` — Added database types for `email` on `profiles` and all new admin RPC functions.
+* `src/integrations/supabase/operationalRoleVerification.test.ts` — Added assertions for bootstrap admin provisioning, idempotent account updates, and multi-layer RPC security guards.
+* `package.json` — Added `"bootstrap:admin": "node scripts/bootstrap-admin.mjs"` script.
+
+#### Security & Architecture Enforcement
+* Bootstrap administrator `admin123@gmail.com` created and provisioned with `raw_app_meta_data.role = 'admin'` and `public.profiles.role = 'admin'`.
+* Citizen UI completely untouched and strictly preserved.
+* Only admins can access `OperationalUserManagement`.
+* Database-level RPC security guards enforce `public.current_app_role() = 'admin'` using PostgreSQL error code 42501.
+* No passwords stored in plaintext in public tables; passwords encrypted via bcrypt in `auth.users`.
+* Passwords strictly omitted from client-side source code.
+
+#### Validation Performed
+* `npm run test -- --run` — **PASS** (15 test files, 294 tests passing)
+* `npx tsc --noEmit` — **PASS** (0 type errors)
+* `npm run build` — **PASS** (Production bundle generated cleanly in 10.04s)
+* `git diff --check` — **PASS** (0 whitespace/formatting errors)
