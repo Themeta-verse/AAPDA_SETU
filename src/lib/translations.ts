@@ -12,8 +12,8 @@ export const languageNames: Record<Language, string> = {
 export const translations: Record<Language, Record<string, string>> = {
   en: {
     title: 'BayWatch',
-    subtitle: 'Juhu Coastal Disaster Alert System',
-    tagline: 'Real-time coastal monitoring and multilingual emergency guidance for Juhu Beach, Mumbai.',
+    subtitle: 'Urban & Coastal Disaster Intelligence & Response',
+    tagline: 'Real-time multi-hazard monitoring and multilingual emergency response guidance for urban areas and coastal zones.',
     viewAlerts: 'View Current Alerts',
     startMockDrill: 'Start Mock Drill',
     currentStatus: 'Current Status',
@@ -128,8 +128,8 @@ export const translations: Record<Language, Record<string, string>> = {
   },
   hi: {
     title: 'बेवॉच',
-    subtitle: 'जुहू तटीय आपदा चेतावनी प्रणाली',
-    tagline: 'जुहू बीच, मुंबई के लिए वास्तविक समय तटीय निगरानी और बहुभाषी आपातकालीन मार्गदर्शन।',
+    subtitle: 'शहरी एवं तटीय आपदा सतर्कता व प्रतिक्रिया प्रणाली',
+    tagline: 'शहरी और तटीय क्षेत्रों के लिए वास्तविक समय बहु-आपदा निगरानी और बहुभाषी आपातकालीन मार्गदर्शन।',
     viewAlerts: 'वर्तमान अलर्ट देखें',
     startMockDrill: 'मॉक ड्रिल शुरू करें',
     currentStatus: 'वर्तमान स्थिति',
@@ -235,8 +235,8 @@ export const translations: Record<Language, Record<string, string>> = {
   },
   mr: {
     title: 'बेवॉच',
-    subtitle: 'जुहू किनारपट्टी आपत्ती सतर्कता प्रणाली',
-    tagline: 'जुहू बीच, मुंबईसाठी रिअल-टाइम किनारपट्टी निरीक्षण आणि बहुभाषिक आपत्कालीन मार्गदर्शन.',
+    subtitle: 'शहरी व किनारपट्टी आपत्ती सतर्कता प्रणाली',
+    tagline: 'शहरी आणि किनारपट्टी भागांसाठी रिअल-टाइम बहु-धोका निरीक्षण आणि बहुभाषिक आपत्कालीन मार्गदर्शन.',
     viewAlerts: 'सध्याचे अलर्ट पहा',
     startMockDrill: 'मॉक ड्रिल सुरू करा',
     currentStatus: 'सध्याची स्थिती',
@@ -342,8 +342,8 @@ export const translations: Record<Language, Record<string, string>> = {
   },
   gu: {
     title: 'બેવોચ',
-    subtitle: 'જુહુ દરિયાકાંઠા આપત્તિ ચેતવણી સિસ્ટમ',
-    tagline: 'જુહુ બીચ, મુંબઈ માટે રીઅલ-ટાઈમ દરિયાકાંઠા નિરીક્ષણ અને બહુભાષી કટોકટી માર્ગદર્શન.',
+    subtitle: 'શહેરી અને દરિયાકાંઠા આપત્તિ ચેતવણી સિસ્ટમ',
+    tagline: 'શહેરી અને દરિયાકાંઠા વિસ્તારો માટે રીઅલ-ટાઈમ બહુ-જોખમ નિરીક્ષણ અને બહુભાષી કટોકટી માર્ગદર્શન.',
     viewAlerts: 'વર્તમાન ચેતવણીઓ જુઓ',
     startMockDrill: 'મોક ડ્રિલ શરૂ કરો',
     currentStatus: 'વર્તમાન સ્થિતિ',
@@ -448,3 +448,151 @@ export const translations: Record<Language, Record<string, string>> = {
     waveForecastAvg: 'સરેરાશ',
   },
 };
+
+export const voiceAlertTexts: Record<Language, Record<string, string>> = {
+  en: {
+    highWave: 'Attention. High wave warning issued for Juhu Beach. Please move away from the shoreline and proceed to higher ground.',
+    tsunami: 'Emergency. Tsunami risk alert for Juhu Beach. Evacuate immediately. Move to higher ground and follow evacuation routes.',
+    flood: 'Warning. Coastal flood alert for Juhu Beach area. Avoid low-lying areas and coastal roads.',
+    rain: 'Advisory. Heavy rainfall warning for Juhu Beach. Exercise caution near water bodies.',
+  },
+  hi: {
+    highWave: 'ध्यान दें। जुहू बीच के लिए उच्च लहर चेतावनी जारी। कृपया समुद्र तट से दूर जाएं और ऊंचे स्थान पर जाएं।',
+    tsunami: 'आपातकाल। जुहू बीच के लिए सुनामी जोखिम चेतावनी। तुरंत निकासी करें। ऊंचे स्थान पर जाएं।',
+    flood: 'चेतावनी। जुहू बीच क्षेत्र के लिए तटीय बाढ़ चेतावनी। निचले इलाकों और तटीय सड़कों से बचें।',
+    rain: 'सलाह। जुहू बीच के लिए भारी बारिश की चेतावनी। जल निकायों के पास सावधानी बरतें।',
+  },
+  mr: {
+    highWave: 'लक्ष द्या. जुहू बीचसाठी उच्च लाट इशारा जारी. कृपया समुद्रकिनाऱ्यापासून दूर जा आणि उंच ठिकाणी जा.',
+    tsunami: 'आणीबाणी। जुहू बीचसाठी त्सुनामी धोका सतर्कता. ताबडतोब निर्वासन करा. उंच ठिकाणी जा.',
+    flood: 'इशारा। जुहू बीच परिसरासाठी किनारपट्टी पूर सतर्कता. सखल भाग आणि किनारपट्टी रस्ते टाळा.',
+    rain: 'सूचना। जुहू बीचसाठी मुसळधार पाऊस इशारा. जलाशयांजवळ सावधगिरी बाळगा.',
+  },
+  gu: {
+    highWave: 'ધ્યાન આપો. જુહુ બીચ માટે ઊંચી લાવણ્ય ચેતવણી જારી. કૃપા કરીને દરિયાકાંઠેથી દૂર જાઓ અને ઊંચા સ્થાને જાઓ.',
+    tsunami: 'કટોકટી. જુહુ બીચ માટે સુનામી જોખમ ચેતવણી. તરત ખાલી કરો. ઊંચા સ્થાને જાઓ.',
+    flood: 'ચેતવણી. જુહુ બીચ વિસ્તાર માટે દરિયાકાંઠા પૂર ચેતવણી. નીચા વિસ્તારો અને દરિયાકાંઠાના રસ્તા ટાળો.',
+    rain: 'સલાહ. જુહુ બીચ માટે ભારે વરસાદ ચેતવણી. જળાશયો પાસે સાવધાની રાખો.',
+  },
+};
+
+// --- ElevenLabs AI Voice System ---
+
+let currentAudio: HTMLAudioElement | null = null;
+
+const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL ?? '';
+const SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ?? '';
+
+// Track if ElevenLabs has failed so we skip it on subsequent calls in the same session
+let elevenLabsDisabled = false;
+
+export async function speakAlert(text: string, lang: Language, onEnd?: () => void): Promise<void> {
+  // Stop any current playback first
+  stopSpeaking();
+
+  // Skip ElevenLabs if previously failed or not configured
+  if (!SUPABASE_URL || elevenLabsDisabled) {
+    console.log('[BayWatch Voice] Using browser TTS');
+    speakAlertBrowserFallback(text, lang, onEnd);
+    return;
+  }
+
+  try {
+    console.log(`[BayWatch Voice] Generating AI voice for language: ${lang}`);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    // verify_jwt = true on this function: send the signed-in user's access
+    // token so the gateway can verify the caller, falling back to the
+    // publishable key only before a session exists.
+    const { data: sessionData } = await supabase.auth.getSession();
+    const bearer = sessionData.session?.access_token ?? SUPABASE_KEY;
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/elevenlabs-tts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${bearer}`,
+      },
+      body: JSON.stringify({ text, language: lang }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      console.warn('[BayWatch Voice] AI voice unavailable, using browser TTS:', err);
+      // Disable ElevenLabs for this session to avoid repeated failures
+      elevenLabsDisabled = true;
+      speakAlertBrowserFallback(text, lang, onEnd);
+      return;
+    }
+
+    const audioBlob = await response.blob();
+    if (audioBlob.size < 100) {
+      console.warn('[BayWatch Voice] Empty audio response, using browser TTS');
+      elevenLabsDisabled = true;
+      speakAlertBrowserFallback(text, lang, onEnd);
+      return;
+    }
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    currentAudio = audio;
+
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      if (onEnd) onEnd();
+    };
+
+    audio.onerror = (e) => {
+      console.error('[BayWatch Voice] Audio playback error:', e);
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      // Fallback on playback error too
+      speakAlertBrowserFallback(text, lang, onEnd);
+    };
+
+    await audio.play();
+    console.log('[BayWatch Voice] AI voice playing successfully');
+  } catch (err) {
+    console.warn('[BayWatch Voice] AI voice failed, using browser TTS:', err);
+    elevenLabsDisabled = true;
+    speakAlertBrowserFallback(text, lang, onEnd);
+  }
+}
+
+export function stopSpeaking() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  // Also stop any browser TTS fallback
+  if ('speechSynthesis' in window) {
+    speechSynthesis.cancel();
+  }
+}
+
+// Browser TTS fallback if ElevenLabs is unavailable
+function speakAlertBrowserFallback(text: string, lang: Language, onEnd?: () => void): void {
+  if (!('speechSynthesis' in window)) {
+    if (onEnd) onEnd();
+    return;
+  }
+  speechSynthesis.cancel();
+  const speech = new SpeechSynthesisUtterance(text);
+  const langMap: Record<Language, string> = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN', gu: 'gu-IN' };
+  speech.lang = langMap[lang];
+  speech.rate = 1;
+  speech.pitch = 1;
+  if (onEnd) {
+    speech.onend = onEnd;
+    speech.onerror = () => onEnd();
+  }
+  speechSynthesis.speak(speech);
+}

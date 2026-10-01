@@ -4,7 +4,6 @@ import { type Language, translations } from '@/lib/translations';
 import { type MonitoringData, riskColors, statusHasMeasurements } from '@/lib/monitoringData';
 import { type NormalizedMarine } from '@/hooks/useWeatherData';
 import { type EarthquakeState } from '@/hooks/useEarthquakeData';
-import { formatInstantInSourceTimezone } from '@/lib/sourceTime';
 import { RiskLegend } from './RiskLegend';
 
 interface MonitoringDashboardProps {
@@ -14,6 +13,8 @@ interface MonitoringDashboardProps {
   alertIssuedTime?: Date;
   marine?: NormalizedMarine;
   earthquakes?: EarthquakeState;
+  locationName?: string;
+  isCoastal?: boolean;
 }
 
 /**
@@ -24,20 +25,8 @@ function reading(value: number | null, unit = ''): string {
   return value === null ? '—' : `${value}${unit}`;
 }
 
-/**
- * Gauge fill for one metric.
- *
- * `null` yields `null`, not `0`. A zero-fill ring is visually identical to a
- * genuine `0.0 m` measurement, which would let an unavailable reading look like
- * a healthy one; `GaugeRing` renders an explicit no-data track instead.
- */
-function gaugeFill(value: number | null): number | null {
-  return value;
-}
-
-function GaugeRing({ value, max, color, size = 64 }: { value: number | null; max: number; color: string; size?: number }) {
-  const hasValue = value !== null;
-  const pct = hasValue ? Math.min(value / max, 1) : 0;
+function GaugeRing({ value, max, color, size = 64 }: { value: number; max: number; color: string; size?: number }) {
+  const pct = Math.min(value / max, 1);
   const r = (size - 8) / 2;
   const circumference = 2 * Math.PI * r;
   const strokeDashoffset = circumference * (1 - pct);
@@ -45,7 +34,6 @@ function GaugeRing({ value, max, color, size = 64 }: { value: number | null; max
   return (
     <svg width={size} height={size} className="transform -rotate-90">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
-      {hasValue && (
       <motion.circle
         cx={size / 2} cy={size / 2} r={r} fill="none"
         stroke={color}
@@ -55,72 +43,111 @@ function GaugeRing({ value, max, color, size = 64 }: { value: number | null; max
         animate={{ strokeDashoffset }}
         transition={{ duration: 1.2, ease: 'easeOut' }}
       />
-      )}
     </svg>
   );
 }
 
-export function MonitoringDashboard({ data, language, clock, alertIssuedTime, marine, earthquakes }: MonitoringDashboardProps) {
+export function MonitoringDashboard({
+  data,
+  language,
+  clock,
+  alertIssuedTime,
+  marine,
+  earthquakes,
+  locationName,
+  isCoastal = true,
+}: MonitoringDashboardProps) {
   const t = translations[language];
   const hasData = statusHasMeasurements(data.status);
 
-  // Gauge fill keeps `null` as `null`; GaugeRing draws a no-data track for it.
-  const gauge = gaugeFill;
+  // Gauge raw values are numeric-only; a missing reading contributes no fill
+  // rather than a zero that reads as a healthy measurement.
+  const gauge = (value: number | null) => (value === null ? 0 : value);
 
-  /**
-   * Card thresholds are imported from the risk engine rather than re-typed.
-   *
-   * These cards previously hardcoded wind >20/>30 and rain >60/>80 while
-   * `monitoringData` and the engine used >25/>40 and >50/>85. The gauge colour
-   * and the headline verdict could therefore disagree about the same reading.
-   */
   const metrics = [
-    { icon: Waves, label: t.waveHeight, value: reading(data.waveHeight, 'm'), raw: gauge(data.waveHeight), max: 6, warn: data.waveHeight !== null && data.waveHeight > 3.5, critical: data.waveHeight !== null && data.waveHeight > 4.0 },
-    { icon: Wind, label: t.windSpeed, value: reading(data.windSpeed, ' km/h'), raw: gauge(data.windSpeed), max: 60, warn: data.windSpeed !== null && data.windSpeed > 25, critical: data.windSpeed !== null && data.windSpeed > 40 },
-    { icon: CloudRain, label: t.rainProbability, value: reading(data.rainProbability, '%'), raw: gauge(data.rainProbability), max: 100, warn: data.rainProbability !== null && data.rainProbability > 50, critical: data.rainProbability !== null && data.rainProbability > 85 },
-    { icon: Anchor, label: t.seaCondition, value: data.seaCondition ? t[data.seaCondition] : '—', raw: data.seaCondition === 'veryRough' ? 90 : data.seaCondition === 'rough' ? 60 : data.seaCondition === 'calm' ? 20 : null, max: 100, warn: data.seaCondition === 'rough', critical: data.seaCondition === 'veryRough' },
-    ...(marine ? [
-      { icon: Thermometer, label: 'Temperature', value: reading(marine.temperature, '°C'), raw: gauge(marine.temperature), max: 50, warn: marine.temperature !== null && marine.temperature > 40, critical: marine.temperature !== null && marine.temperature > 45 },
-      // The pressure card plots how far pressure sits BELOW 1013 hPa, which is
-      // what the card is actually about. It was previously an unexplained
-      // `1050 - pressure` figure that appears in no source and no rule set.
-      { icon: BarChart3, label: 'Pressure deficit', value: marine.pressure === null ? '—' : `${(1013 - marine.pressure).toFixed(1)} hPa`, raw: marine.pressure === null ? null : Math.max(0, 1013 - marine.pressure), max: 40, warn: marine.pressure !== null && marine.pressure < 1005, critical: marine.pressure !== null && marine.pressure < 995 },
-      { icon: Compass, label: 'Wave Dir / Period', value: `${reading(marine.waveDirection, '°')} / ${reading(marine.wavePeriod, 's')}`, raw: gauge(marine.wavePeriod), max: 20, warn: false, critical: false },
-    ] : []),
+    {
+      icon: Waves,
+      label: t.waveHeight,
+      value: isCoastal ? reading(data.waveHeight, 'm') : 'N/A (Inland)',
+      raw: isCoastal ? gauge(data.waveHeight) : 0,
+      max: 6,
+      warn: isCoastal && data.waveHeight !== null && data.waveHeight > 3.5,
+      critical: isCoastal && data.waveHeight !== null && data.waveHeight > 4.0,
+    },
+    {
+      icon: Wind,
+      label: t.windSpeed,
+      value: reading(data.windSpeed, ' km/h'),
+      raw: gauge(data.windSpeed),
+      max: 60,
+      warn: data.windSpeed !== null && data.windSpeed > 20,
+      critical: data.windSpeed !== null && data.windSpeed > 30,
+    },
+    {
+      icon: CloudRain,
+      label: t.rainProbability,
+      value: reading(data.rainProbability, '%'),
+      raw: gauge(data.rainProbability),
+      max: 100,
+      warn: data.rainProbability !== null && data.rainProbability > 60,
+      critical: data.rainProbability !== null && data.rainProbability > 80,
+    },
+    {
+      icon: Anchor,
+      label: t.seaCondition,
+      value: isCoastal ? (data.seaCondition ? t[data.seaCondition] : '—') : 'N/A (Inland)',
+      raw: isCoastal
+        ? data.seaCondition === 'veryRough'
+          ? 90
+          : data.seaCondition === 'rough'
+            ? 60
+            : data.seaCondition === 'calm'
+              ? 20
+              : 0
+        : 0,
+      max: 100,
+      warn: isCoastal && data.seaCondition === 'rough',
+      critical: isCoastal && data.seaCondition === 'veryRough',
+    },
+    ...(marine
+      ? [
+          {
+            icon: Thermometer,
+            label: 'Temperature',
+            value: reading(marine.temperature, '°C'),
+            raw: gauge(marine.temperature),
+            max: 50,
+            warn: marine.temperature !== null && marine.temperature > 40,
+            critical: marine.temperature !== null && marine.temperature > 45,
+          },
+          {
+            icon: BarChart3,
+            label: 'Pressure',
+            value: reading(marine.pressure, ' hPa'),
+            raw: marine.pressure === null ? 0 : Math.max(0, 1050 - marine.pressure),
+            max: 60,
+            warn: marine.pressure !== null && marine.pressure < 1005,
+            critical: marine.pressure !== null && marine.pressure < 995,
+          },
+          ...(isCoastal
+            ? [
+                {
+                  icon: Compass,
+                  label: 'Wave Dir / Period',
+                  value: `${reading(marine.waveDirection, '°')} / ${reading(marine.wavePeriod, 's')}`,
+                  raw: gauge(marine.wavePeriod),
+                  max: 20,
+                  warn: false,
+                  critical: false,
+                },
+              ]
+            : []),
+        ]
+      : []),
   ];
 
   const riskLabel = data.riskLevel === 'critical' ? t.critical : data.riskLevel === 'high' ? t.high : data.riskLevel === 'moderate' ? t.moderate : t.safe;
-
-  /**
-   * The time an alert was issued, or null when none was.
-   *
-   * This used to fall back to `clock - 25s`, which invented a plausible issue
-   * time for every session and displayed it next to a real-looking clock. With
-   * no alert there is now no timestamp.
-   */
-  const issuedTime = alertIssuedTime ?? null;
-
-  /**
-   * "Last updated" must be the last time we successfully READ a source, not a
-   * wall clock that advances every second regardless of whether anything was
-   * fetched. A ticking clock next to unavailable data implies live telemetry.
-   */
-  const lastReadAt = marine?.fetchedAt ?? null;
-  const lastReadText = lastReadAt ? formatInstantInSourceTimezone(lastReadAt) : null;
-
-  /**
-   * Connectivity label. The old code rendered "System Active" unconditionally,
-   * so an offline browser with no data still claimed to be active.
-   */
-  const connectivityLabel = !hasData
-    ? 'NO DATA'
-    : data.status === 'live'
-      ? t.systemActive
-      : data.status === 'stale'
-        ? 'STALE'
-        : data.status === 'offline'
-          ? 'OFFLINE'
-          : 'UNAVAILABLE';
+  const issuedTime = alertIssuedTime || new Date(clock.getTime() - 25000);
 
   // Without measurements there is no risk verdict to show. Rendering the
   // placeholder `safe` value as a green all-clear would be a false claim.
@@ -150,12 +177,12 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
             <div className="flex items-center gap-2">
               <div className={`w-2.5 h-2.5 rounded-full ${data.status === 'live' ? 'bg-safe animate-pulse' : data.status === 'stale' ? 'bg-warning' : 'bg-muted-foreground'}`} />
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.currentStatus}:</span>
-              <span className={`font-bold uppercase ${data.status === 'unavailable' || data.status === 'offline' ? 'text-muted-foreground' : statusTone}`}>{connectivityLabel}</span>
+              <span className={`font-bold uppercase ${statusTone}`}>{t.systemActive}</span>
             </div>
             <div className="flex items-center gap-2">
               <Radio className="w-3 h-3 text-primary" />
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.location}:</span>
-              <span className="font-bold text-foreground">{t.juhuBeach}</span>
+              <span className="font-bold text-foreground">{locationName || t.juhuBeach}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.riskLevel}:</span>
@@ -165,9 +192,7 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
             </div>
             <div className="flex items-center gap-2 ml-auto">
               <span className="text-muted-foreground uppercase tracking-wider font-semibold">{t.lastUpdated}:</span>
-              <span className="font-bold text-primary font-mono">
-                {lastReadText ?? 'never'}
-              </span>
+              <span className="font-bold text-primary font-mono">{clock.toLocaleTimeString()}</span>
             </div>
           </div>
 
@@ -203,9 +228,7 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
             <div className="text-right font-mono text-xs text-muted-foreground space-y-1">
               <div>
                 <span className="uppercase tracking-wider text-[10px]">{t.alertIssued}</span>
-                <p className="text-foreground font-semibold">
-                  {issuedTime ? `${formatInstantInSourceTimezone(issuedTime.toISOString())} IST` : 'NOT ISSUED'}
-                </p>
+                <p className="text-foreground font-semibold">{issuedTime.toLocaleTimeString()}</p>
               </div>
               <div>
                 <p className="text-foreground">{clock.toLocaleDateString()}</p>
@@ -300,7 +323,7 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
                 </>
               )}
               {earthquakes.feedGeneratedAt && (
-                <span className="ml-2 font-mono">feed generated {formatInstantInSourceTimezone(earthquakes.feedGeneratedAt)} IST</span>
+                <span className="ml-2 font-mono">feed generated {new Date(earthquakes.feedGeneratedAt).toLocaleString()}</span>
               )}
             </p>
 
@@ -367,7 +390,7 @@ export function MonitoringDashboard({ data, language, clock, alertIssuedTime, ma
                             )}
                           </td>
                           <td className="py-2.5 pr-4 text-muted-foreground font-mono">
-                            {eq.occurredAt ? `${formatInstantInSourceTimezone(eq.occurredAt)} IST` : '—'}
+                            {eq.occurredAt ? new Date(eq.occurredAt).toLocaleString() : '—'}
                           </td>
                           <td className="py-2.5 pr-4 text-muted-foreground font-mono">
                             {eq.depthKm === null ? '—' : `${eq.depthKm.toFixed(1)} km`}

@@ -1,234 +1,137 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  distanceMetres,
-  initialBearing,
-  compassPoint,
-  describeAccuracy,
-  formatCoordinate,
-  type LatLon,
-} from '@/lib/geo';
+import { useState, useEffect, useCallback } from 'react';
 
-/**
- * Real device geolocation.
- *
- * ===================================================================
- * WHAT CHANGED AND WHY
- * ===================================================================
- *
- * The previous version of this hook hardcoded `72.84` and `19.1` as the
- * "evacuation destination" and derived a compass direction toward them. Those are
- * not the coordinates of any destination; they are two literals that happened to
- * look like Mumbai. Every direction it produced was therefore wrong for every
- * user except by coincidence, and it presented the result as guidance.
- *
- * There is no fixed destination here any more. A direction exists only when a
- * real destination has been supplied, and it is computed by real geodesy from
- * the user's real fix to that destination's real coordinates.
- *
- * HONESTY RULES
- * -------------
- * - `position` stays null until the browser actually returns a fix.
- * - Every failure mode has its own state. "Denied", "unavailable" and "timeout"
- *   are different problems with different remedies, so they are not collapsed
- *   into one generic error string.
- * - A stale fix is aged out rather than displayed indefinitely as if current.
- * - No fallback position is ever substituted. If GPS fails, the app has no user
- *   location, and the UI must say so.
- */
-
-/** The monitored coastal point. This is NOT the user's location. */
-export const MONITORED_POINT: LatLon = { latitude: 19.0988, longitude: 72.8267 };
-export const MONITORED_POINT_LABEL = 'Juhu Beach, Mumbai';
-
-export type GeolocationStatus =
-  | 'idle'
-  | 'locating'
-  | 'ready'
-  | 'denied'
-  | 'unavailable'
-  | 'timeout'
-  | 'unsupported'
-  | 'error';
-
-/** A fix older than this is not presented as current. */
-const STALE_AFTER_MS = 120000;
-
-export interface GeoFix {
+interface GeoPosition {
   latitude: number;
   longitude: number;
-  /** Horizontal accuracy radius in metres, as reported by the device. */
-  accuracyM: number;
-  /** Epoch milliseconds when the fix was taken. */
-  at: number;
+  accuracy: number;
 }
 
-const STATUS_MESSAGE: Record<GeolocationStatus, string> = {
-  idle: 'Your location has not been requested yet.',
-  locating: 'Asking your device for a location fix…',
-  ready: 'Location acquired.',
-  denied:
-    'Location permission was denied. BayWatch cannot show your position or route you ' +
-    'without it. You can still use the monitored beach point and read every source.',
-  unavailable:
-    'Your device could not determine a position. This is common indoors or with ' +
-    'location services switched off.',
-  timeout: 'Your device did not return a position in time. Moving somewhere with a clearer view of the sky, or enabling location services, usually helps.',
-  unsupported: 'This browser does not support the Geolocation API.',
-  error: 'An unexpected error occurred while locating you.',
-};
+// Default reference location (Juhu Beach coastal baseline for seed demo)
+export const DEFAULT_REFERENCE_LOCATION = { latitude: 19.0988, longitude: 72.8267, name: 'Reference Hazard Point' };
+export const JUHU_BEACH = DEFAULT_REFERENCE_LOCATION;
 
-export interface UseGeolocationOptions {
-  /** Stop watching once this many milliseconds have passed. */
-  timeoutMs?: number;
-  enableHighAccuracy?: boolean;
-  /** Age at which a fix is treated as stale. */
-  staleAfterMs?: number;
+// Haversine formula for distance between two points in km
+export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export function useGeolocation(options: UseGeolocationOptions = {}) {
-  const {
-    timeoutMs = 15000,
-    enableHighAccuracy = true,
-    staleAfterMs = STALE_AFTER_MS,
-  } = options;
+/** Calculate compass heading from user position to a safe target point */
+export function getEvacuationDirectionTo(userLat: number, userLon: number, targetLat: number, targetLon: number): string {
+  const dLon = (targetLon - userLon) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(targetLat * Math.PI / 180);
+  const x = Math.cos(userLat * Math.PI / 180) * Math.sin(targetLat * Math.PI / 180) -
+    Math.sin(userLat * Math.PI / 180) * Math.cos(targetLat * Math.PI / 180) * Math.cos(dLon);
+  const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 
-  const [fix, setFix] = useState<GeoFix | null>(null);
-  const [status, setStatus] = useState<GeolocationStatus>('idle');
-  const [watching, setWatching] = useState(false);
+  if (bearing >= 337.5 || bearing < 22.5) return 'North';
+  if (bearing >= 22.5 && bearing < 67.5) return 'North-East';
+  if (bearing >= 67.5 && bearing < 112.5) return 'East';
+  if (bearing >= 112.5 && bearing < 157.5) return 'South-East';
+  if (bearing >= 157.5 && bearing < 202.5) return 'South';
+  if (bearing >= 202.5 && bearing < 247.5) return 'South-West';
+  if (bearing >= 247.5 && bearing < 292.5) return 'West';
+  return 'North-West';
+}
 
-  const watchIdRef = useRef<number | null>(null);
-  // Drives re-render as a fix ages so it can be reported stale without the user
-  // having to interact.
-  const [clock, setClock] = useState(() => Date.now());
+export function getEvacuationDirection(userLat: number, userLon: number): string {
+  // Move inland (East) from coast
+  const bearing = Math.atan2(
+    Math.sin((72.84 - userLon) * Math.PI / 180) * Math.cos(19.1 * Math.PI / 180),
+    Math.cos(userLat * Math.PI / 180) * Math.sin(19.1 * Math.PI / 180) -
+    Math.sin(userLat * Math.PI / 180) * Math.cos(19.1 * Math.PI / 180) * Math.cos((72.84 - userLon) * Math.PI / 180)
+  ) * 180 / Math.PI;
 
-  const stopWatching = useCallback(() => {
-    if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-    setWatching(false);
-  }, []);
+  if (bearing >= -45 && bearing < 45) return 'East (Inland)';
+  if (bearing >= 45 && bearing < 135) return 'South';
+  if (bearing >= -135 && bearing < -45) return 'North';
+  return 'West';
+}
 
-  const onError = useCallback((error: GeolocationPositionError) => {
-    // The numeric code is the only reliable way to distinguish these; the
-    // browser's `message` is localised and inconsistent.
-    switch (error.code) {
-      case error.PERMISSION_DENIED:
-        setStatus('denied');
-        break;
-      case error.POSITION_UNAVAILABLE:
-        setStatus('unavailable');
-        break;
-      case error.TIMEOUT:
-        setStatus('timeout');
-        break;
-      default:
-        setStatus('error');
-    }
-  }, []);
+export interface GeolocationTarget {
+  latitude: number;
+  longitude: number;
+  name?: string;
+}
+
+export function useGeolocation(
+  referenceTarget: GeolocationTarget = DEFAULT_REFERENCE_LOCATION,
+  safeTarget?: GeolocationTarget | null
+) {
+  const [position, setPosition] = useState<GeoPosition | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [permissionGranted, setPermissionGranted] = useState(false);
 
   const requestLocation = useCallback(() => {
-    // Truthiness, not `'geolocation' in navigator`: the property can exist
-    // while holding no implementation, and calling a method on that would
-    // throw instead of reaching the honest `unsupported` state.
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setStatus('unsupported');
+    if (!('geolocation' in navigator)) {
+      setError('Geolocation is not supported by your browser');
       return;
     }
 
-    stopWatching();
-    setStatus('locating');
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setPosition({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+        setPermissionGranted(true);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        setError(err.message);
+        setLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, []);
 
-    const accept = (position: GeolocationPosition) => {
-      const { latitude, longitude, accuracy } = position.coords;
-
-      // A device can in principle report a non-finite value. Rejecting it here
-      // prevents NaN from propagating into a distance or a map centre.
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        setStatus('error');
-        return;
-      }
-
-      setFix({ latitude, longitude, accuracyM: accuracy, at: position.timestamp || Date.now() });
-      setStatus('ready');
-      setClock(Date.now());
-    };
-
-    navigator.geolocation.getCurrentPosition(accept, onError, {
-      enableHighAccuracy,
-      timeout: timeoutMs,
-      // A fix up to 30 s old is acceptable and avoids a needless GPS cold start.
-      maximumAge: 30000,
-    });
-
-    // Continue tracking so a moving user is not stranded on a first fix. This
-    // only starts after an explicit request, so it never prompts unasked.
-    if (typeof navigator.geolocation.watchPosition === 'function') {
-      setWatching(true);
-      watchIdRef.current = navigator.geolocation.watchPosition(accept, onError, {
-        enableHighAccuracy,
-        maximumAge: 10000,
-        timeout: 60000,
-      });
-    }
-  }, [enableHighAccuracy, onError, stopWatching, timeoutMs]);
-
-  // Age the fix so it can be reported as stale rather than shown as live.
+  // Watch position for live updates
   useEffect(() => {
-    if (!fix) return;
-    const timer = setInterval(() => setClock(Date.now()), 15000);
-    return () => clearInterval(timer);
-  }, [fix]);
+    if (!permissionGranted || !('geolocation' in navigator)) return;
 
-  useEffect(() => stopWatching, [stopWatching]);
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setPosition({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 15000 }
+    );
 
-  const isStale = fix !== null && clock - fix.at > staleAfterMs;
-  const hasFix = fix !== null && !isStale;
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [permissionGranted]);
 
-  const position: LatLon | null = hasFix ? { latitude: fix!.latitude, longitude: fix!.longitude } : null;
+  const target = referenceTarget || DEFAULT_REFERENCE_LOCATION;
+  const distanceToHazard = position
+    ? calculateDistance(position.latitude, position.longitude, target.latitude, target.longitude)
+    : null;
 
-  /**
-   * Real distance and direction to a supplied destination.
-   *
-   * Null whenever either endpoint is unknown. There is no default destination,
-   * so this cannot return a direction toward a hardcoded point.
-   */
-  const destination = useCallback(
-    (to: LatLon | null | undefined) => {
-      if (!position || !to) {
-        return { distanceM: null, bearing: null, compass: null };
-      }
-      const bearing = initialBearing(position, to);
-      return {
-        distanceM: distanceMetres(position, to),
-        bearing,
-        compass: compassPoint(bearing),
-      };
-    },
-    [position],
-  );
+  const evacuationDirection = position
+    ? safeTarget
+      ? getEvacuationDirectionTo(position.latitude, position.longitude, safeTarget.latitude, safeTarget.longitude)
+      : getEvacuationDirection(position.latitude, position.longitude)
+    : null;
 
   return {
     position,
-    fix,
-    status,
-    statusMessage: STATUS_MESSAGE[status],
-    /** True when a fix exists and is still within the freshness window. */
-    hasFix,
-    isStale,
-    watching,
+    error,
+    loading,
+    permissionGranted,
     requestLocation,
-    stopWatching,
-    /** "19.09880, 72.82670" or null. Never a fabricated coordinate. */
-    formatted: formatCoordinate(position),
-    accuracyLabel: fix ? describeAccuracy(fix.accuracyM) : null,
-    accuracyM: fix?.accuracyM ?? null,
-    /** Age of the current fix in seconds, or null when there is none. */
-    ageSeconds: fix ? Math.max(0, Math.round((clock - fix.at) / 1000)) : null,
-    /** Distance to the monitored beach point, metres, or null. */
-    distanceToMonitoredM: position ? distanceMetres(position, MONITORED_POINT) : null,
-    destination,
+    distanceToHazard,
+    distanceFromBeach: distanceToHazard,
+    evacuationDirection,
   };
 }
-
-export type UseGeolocationReturn = ReturnType<typeof useGeolocation>;

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Send, AlertTriangle, Waves, Construction, Loader2, CheckCircle, FileWarning, Plus } from 'lucide-react';
+import { Camera, Send, AlertTriangle, Waves, Construction, Loader2, CheckCircle, FileWarning, Plus, Clock, Upload, WifiOff } from 'lucide-react';
 import { type Language, translations } from '@/lib/translations';
 import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useToast } from '@/hooks/use-toast';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
+import { useOfflineIncidentQueue } from '@/hooks/useOfflineIncidentQueue';
 import {
   isIncidentType,
   submitIncident,
@@ -71,9 +73,11 @@ export function CitizenReporting({ language, userId, client }: CitizenReportingP
   const [submitted, setSubmitted] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const { position } = useGeolocation();
+  const { isOnline, status: connectionStatus } = useNetworkStatus();
+  const { queueNewIncident, stats } = useOfflineIncidentQueue();
   const { toast } = useToast();
 
-  const typeLabels: Record<string, string> = {
+const typeLabels: Record<string, string> = {
     flooding: rl.flooding, high_waves: rl.highWaves, blocked_roads: rl.blockedRoads, other: rl.other,
   };
 
@@ -86,6 +90,15 @@ export function CitizenReporting({ language, userId, client }: CitizenReportingP
     setFormError(null);
   };
 
+  const getConnectionLabel = () => {
+    if (!isOnline) return { label: 'OFFLINE', icon: WifiOff, color: 'text-muted-foreground', bg: 'bg-muted/20 border-muted/30' };
+    if (connectionStatus === 'reconnecting') return { label: 'RECONNECTING...', icon: Upload, color: 'text-warning', bg: 'bg-warning/10 border-warning/30' };
+    return { label: 'ONLINE', icon: Upload, color: 'text-safe', bg: 'bg-safe/10 border-safe/30' };
+  };
+
+  const connectionInfo = getConnectionLabel();
+  const ConnectionIcon = connectionInfo.icon;
+
   const handleSubmit = async () => {
     // Guard the invariants the database also enforces, so an invalid value is
     // never sent and never reported as a success.
@@ -94,41 +107,64 @@ export function CitizenReporting({ language, userId, client }: CitizenReportingP
     setSubmitting(true);
     setFormError(null);
 
-    const activeClient = client ?? (supabase as unknown as IncidentClientLike);
+const activeClient = client ?? (supabase as unknown as IncidentClientLike);
 
-    const result = await submitIncident(
-      { client: activeClient },
-      {
-        reporterId: userId,
-        type,
-        description: description.trim(),
-        latitude: position?.latitude ?? null,
-        longitude: position?.longitude ?? null,
-        photo,
+    try {
+      if (isOnline) {
+        const result = await submitIncident(
+          { client: activeClient },
+          {
+            reporterId: userId,
+            type,
+            description: description.trim(),
+            latitude: position?.latitude ?? null,
+            longitude: position?.longitude ?? null,
+            photo,
+          }
+        );
+
+        if (!result.ok) {
+          // Show the database's own message. Never a generic "something went wrong".
+          const message = result.error?.message ?? 'The report could not be submitted.';
+          setFormError(message);
+          toast({ variant: 'destructive', title: 'Error', description: message });
+          return;
+        }
+
+        // Success means the INSERT resolved. A photo failure is reported
+        // separately rather than being presented as a fully successful report.
+        if (result.photoWarning) {
+          toast({ variant: 'destructive', title: 'Error', description: result.photoWarning });
+          setFormError(result.photoWarning);
+          return;
+        }
+
+        setSubmitted(true);
+        toast({ title: '✅', description: rl.success });
+        setTimeout(resetForm, 2000);
+      } else {
+        await queueNewIncident(
+          type as 'flooding' | 'high_waves' | 'blocked_roads' | 'other',
+          description,
+          photo,
+          position?.latitude ?? null,
+          position?.longitude ?? null
+        );
+        setSubmitted(true);
+        toast({ title: '📦', description: 'Incident saved offline. Will upload when connection is restored.' });
+        setTimeout(() => {
+          setShowForm(false);
+          setSubmitted(false);
+          setType('');
+          setDescription('');
+          setPhoto(null);
+        }, 2000);
       }
-    );
-
-    setSubmitting(false);
-
-    if (!result.ok) {
-      // Show the database's own message. Never a generic "something went wrong".
-      const message = result.error?.message ?? 'The report could not be submitted.';
-      setFormError(message);
-      toast({ variant: 'destructive', title: 'Error', description: message });
-      return;
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } finally {
+      setSubmitting(false);
     }
-
-    // Success means the INSERT resolved. A photo failure is reported
-    // separately rather than being presented as a fully successful report.
-    if (result.photoWarning) {
-      toast({ variant: 'destructive', title: 'Error', description: result.photoWarning });
-      setFormError(result.photoWarning);
-      return;
-    }
-
-    setSubmitted(true);
-    toast({ title: '✅', description: rl.success });
-    setTimeout(resetForm, 2000);
   };
 
   return (
@@ -139,6 +175,22 @@ export function CitizenReporting({ language, userId, client }: CitizenReportingP
           {rl.title}
         </h2>
         <p className="text-muted-foreground mb-6 text-sm">{rl.desc}</p>
+
+        {/* Connection Status & Offline Queue Indicator */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium ${connectionInfo.bg}`}>
+            <ConnectionIcon className={`w-4 h-4 ${connectionInfo.color}`} />
+            <span className={`${connectionInfo.color} font-medium`}>{connectionInfo.label}</span>
+          </div>
+          {(stats.queued > 0 || stats.syncing > 0 || stats.failed > 0) && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-medium">
+              <Clock className="w-4 h-4" />
+              <span>Queued: {stats.queued + stats.syncing + stats.failed}</span>
+              {stats.syncing > 0 && <span className="px-1.5 py-0.5 text-[10px] bg-warning/20 text-warning rounded">Syncing: {stats.syncing}</span>}
+              {stats.failed > 0 && <span className="px-1.5 py-0.5 text-[10px] bg-danger/20 text-danger rounded">Failed: {stats.failed}</span>}
+            </div>
+          )}
+        </div>
 
         {!showForm ? (
           <motion.button

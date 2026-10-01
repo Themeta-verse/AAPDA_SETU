@@ -6,7 +6,7 @@ import { useGeolocation } from '@/hooks/useGeolocation';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Login() {
-  const [isSignUp, setIsSignUp] = useState(true);
+  const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -59,15 +59,49 @@ export default function Login() {
         className="relative w-full max-w-md"
       >
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-3 mb-3">
             <Shield className="w-10 h-10 text-primary" />
             <h1 className="text-4xl font-black tracking-tight text-foreground">BAYWATCH</h1>
           </div>
-          <p className="text-primary font-semibold">Juhu Coastal Disaster Alert System</p>
+          <p className="text-primary font-semibold">Urban Disaster Intelligence & Response</p>
           <p className="text-muted-foreground text-sm mt-1">
-            {isSignUp ? 'Create your account to access the dashboard' : 'Sign in to your account'}
+            {isSignUp
+              ? 'Public registration for citizen hazard monitoring & alerts'
+              : 'Sign in with your registered account or operational credentials'}
           </p>
+        </div>
+
+        {/* Auth Mode Tabs */}
+        <div className="flex rounded-xl bg-secondary/80 p-1 mb-5 border border-border" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!isSignUp}
+            onClick={() => setIsSignUp(false)}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+              !isSignUp
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            data-testid="tab-sign-in"
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isSignUp}
+            onClick={() => setIsSignUp(true)}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
+              isSignUp
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            data-testid="tab-sign-up"
+          >
+            Create Citizen Account
+          </button>
         </div>
 
         {/* Form */}
@@ -183,18 +217,22 @@ export default function Login() {
             type="submit"
             disabled={submitting}
             className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+            data-testid="auth-submit-btn"
           >
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {isSignUp ? 'Create Account & Enter Dashboard' : 'Sign In'}
           </button>
 
-          <div className="text-center">
+          <div className="text-center pt-2">
             <button
               type="button"
               onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              className="text-xs text-muted-foreground hover:text-primary transition-colors"
+              data-testid="toggle-auth-mode"
             >
-              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+              {isSignUp
+                ? 'Already have an operational or citizen account? Sign in'
+                : 'Need a new citizen monitoring account? Register here'}
             </button>
           </div>
         </form>

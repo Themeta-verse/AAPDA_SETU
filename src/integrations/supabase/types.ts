@@ -23,6 +23,12 @@ export type AppRole = 'citizen' | 'responder' | 'admin'
  */
 export type IncidentType = 'flooding' | 'high_waves' | 'blocked_roads' | 'other'
 
+export type ResourceType = 'ambulance' | 'fire_rescue' | 'rescue_team' | 'boat' | 'water_pump' | 'emergency_medical_team' | 'search_rescue_team' | 'emergency_vehicle' | 'shelter_capacity' | 'relief_supply' | 'generator' | 'lighting_tower' | 'communication_equipment' | 'dewatering_pump' | 'other'
+
+export type ResourceStatus = 'available' | 'allocated' | 'deployed' | 'maintenance' | 'unavailable'
+
+export type AllocationStatus = 'pending' | 'approved' | 'rejected' | 'deployed' | 'completed' | 'released'
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -94,6 +100,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          email: string | null
           id: string
           latitude: number | null
           longitude: number | null
@@ -104,6 +111,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          email?: string | null
           id: string
           latitude?: number | null
           longitude?: number | null
@@ -114,6 +122,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          email?: string | null
           id?: string
           latitude?: number | null
           longitude?: number | null
@@ -124,15 +133,534 @@ export type Database = {
         }
         Relationships: []
       }
+      emergency_contacts: {
+        Row: {
+          created_at: string
+          id: string
+          is_primary: boolean
+          name: string
+          phone: string
+          relationship: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          name: string
+          phone: string
+          relationship?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          name?: string
+          phone?: string
+          relationship?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      risk_zones: {
+        Row: {
+          alert_threshold_km: number
+          center_lat: number
+          center_lon: number
+          city: string
+          created_at: string
+          event_types: string[]
+          id: string
+          is_active: boolean
+          is_coastal: boolean
+          name: string
+          radius_km: number
+          severity_threshold: string
+          updated_at: string
+          ward: string | null
+          zone_type: string
+        }
+        Insert: {
+          alert_threshold_km?: number
+          center_lat: number
+          center_lon: number
+          city?: string
+          created_at?: string
+          event_types?: string[]
+          id?: string
+          is_active?: boolean
+          is_coastal?: boolean
+          name: string
+          radius_km?: number
+          severity_threshold?: string
+          updated_at?: string
+          ward?: string | null
+          zone_type?: string
+        }
+        Update: {
+          alert_threshold_km?: number
+          center_lat?: number
+          center_lon?: number
+          city?: string
+          created_at?: string
+          event_types?: string[]
+          id?: string
+          is_active?: boolean
+          is_coastal?: boolean
+          name?: string
+          radius_km?: number
+          severity_threshold?: string
+          updated_at?: string
+          ward?: string | null
+          zone_type?: string
+        }
+        Relationships: []
+      }
+      sms_alert_log: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          message: string
+          provider_response: Json | null
+          recipients: Json
+          severity: string
+          sent_at: string
+          status: string
+          user_id: string
+          zone_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          message?: string
+          provider_response?: Json | null
+          recipients?: Json
+          severity: string
+          sent_at?: string
+          status?: string
+          user_id: string
+          zone_id: string | null
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          message?: string
+          provider_response?: Json | null
+          recipients?: Json
+          severity?: string
+          sent_at?: string
+          status?: string
+          user_id?: string
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_alert_log_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "risk_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_alert_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      resources: {
+        Row: {
+          allocated_by: string | null
+          available_quantity: number
+          capacity: number | null
+          created_at: string
+          created_by: string | null
+          id: string
+          latitude: number | null
+          longitude: number | null
+          metadata: Json
+          name: string
+          quantity: number
+          resource_type: string
+          status: string
+          updated_at: string
+          zone_id: string | null
+        }
+        Insert: {
+          allocated_by?: string | null
+          available_quantity?: number
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          metadata?: Json
+          name: string
+          quantity?: number
+          resource_type: string
+          status?: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Update: {
+          allocated_by?: string | null
+          available_quantity?: number
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          metadata?: Json
+          name?: string
+          quantity?: number
+          resource_type?: string
+          status?: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resources_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "risk_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resources_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      resource_allocations: {
+        Row: {
+          allocated_at: string
+          allocated_by: string | null
+          approved_at: string | null
+          approved_by: string | null
+          completed_at: string | null
+          created_at: string
+          deployed_at: string | null
+          deployed_by: string | null
+          id: string
+          incident_id: string | null
+          metadata: Json
+          quantity: number
+          released_at: string | null
+          rejection_reason: string | null
+          resource_id: string
+          status: string
+          updated_at: string
+          zone_id: string | null
+        }
+        Insert: {
+          allocated_at?: string
+          allocated_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          completed_at?: string | null
+          created_at?: string
+          deployed_at?: string | null
+          deployed_by?: string | null
+          id?: string
+          incident_id?: string | null
+          metadata?: Json
+          quantity?: number
+          released_at?: string | null
+          rejection_reason?: string | null
+          resource_id: string
+          status?: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Update: {
+          allocated_at?: string
+          allocated_by?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          completed_at?: string | null
+          created_at?: string
+          deployed_at?: string | null
+          deployed_by?: string | null
+          id?: string
+          incident_id?: string | null
+          metadata?: Json
+          quantity?: number
+          released_at?: string | null
+          rejection_reason?: string | null
+          resource_id?: string
+          status?: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resource_allocations_resource_id_fkey"
+            columns: ["resource_id"]
+            isOneToOne: false
+            referencedRelation: "resources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_allocations_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_reports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_allocations_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "risk_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_allocations_allocated_by_fkey"
+            columns: ["allocated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_allocations_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_allocations_deployed_by_fkey"
+            columns: ["deployed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      resource_incident_compatibility: {
+        Row: {
+          created_at: string
+          id: string
+          incident_type: string
+          notes: string | null
+          priority: number
+          resource_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          incident_type: string
+          notes?: string | null
+          priority?: number
+          resource_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          incident_type?: string
+          notes?: string | null
+          priority?: number
+          resource_type?: string
+        }
+        Relationships: []
+      }
+      resource_audit_logs: {
+        Row: {
+          action: string
+          allocation_id: string | null
+          created_at: string
+          id: string
+          new_status: string | null
+          notes: string | null
+          performed_by: string | null
+          previous_status: string | null
+          quantity: number
+          resource_id: string
+        }
+        Insert: {
+          action: string
+          allocation_id?: string | null
+          created_at?: string
+          id?: string
+          new_status?: string | null
+          notes?: string | null
+          performed_by?: string | null
+          previous_status?: string | null
+          quantity?: number
+          resource_id: string
+        }
+        Update: {
+          action?: string
+          allocation_id?: string | null
+          created_at?: string
+          id?: string
+          new_status?: string | null
+          notes?: string | null
+          performed_by?: string | null
+          previous_status?: string | null
+          quantity?: number
+          resource_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resource_audit_logs_resource_id_fkey"
+            columns: ["resource_id"]
+            isOneToOne: false
+            referencedRelation: "resources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_audit_logs_allocation_id_fkey"
+            columns: ["allocation_id"]
+            isOneToOne: false
+            referencedRelation: "resource_allocations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_audit_logs_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      safe_locations: {
+        Row: {
+          address: string | null
+          capacity: number | null
+          city: string
+          contact_number: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          latitude: number
+          location_type: string
+          longitude: number
+          name: string
+          updated_at: string
+          zone_id: string | null
+        }
+        Insert: {
+          address?: string | null
+          capacity?: number | null
+          city?: string
+          contact_number?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          latitude: number
+          location_type: string
+          longitude: number
+          name: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Update: {
+          address?: string | null
+          capacity?: number | null
+          city?: string
+          contact_number?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          latitude?: number
+          location_type?: string
+          longitude?: number
+          name?: string
+          updated_at?: string
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safe_locations_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "risk_zones"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      should_send_alert: {
+        Args: {
+          p_cooldown_minutes?: number
+          p_event_type: string
+          p_severity: string
+          p_user_id: string
+          p_zone_id: string
+        }
+        Returns: boolean
+      }
+      admin_list_operational_users: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          email: string
+          name: string
+          role: AppRole
+          created_at: string
+          last_sign_in_at: string | null
+          status: string
+        }[]
+      }
+      admin_create_operational_user: {
+        Args: {
+          user_email: string
+          user_name: string
+          user_password?: string
+          user_role: string
+        }
+        Returns: Json
+      }
+      admin_update_user_role: {
+        Args: {
+          new_role: string
+          target_user_id: string
+        }
+        Returns: Json
+      }
+      admin_revoke_operational_access: {
+        Args: {
+          target_user_id: string
+        }
+        Returns: Json
+      }
+      provision_operational_account: {
+        Args: {
+          target_email: string
+          target_role?: string
+        }
+        Returns: Json
+      }
+      bootstrap_admin_account: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
     }
     Enums: {
-      [_ in never]: never
+      resource_type: 'ambulance' | 'fire_rescue' | 'rescue_team' | 'boat' | 'water_pump' | 'emergency_medical_team' | 'search_rescue_team' | 'emergency_vehicle' | 'shelter_capacity' | 'relief_supply' | 'generator' | 'lighting_tower' | 'communication_equipment' | 'dewatering_pump' | 'other'
+      resource_status: 'available' | 'allocated' | 'deployed' | 'maintenance' | 'unavailable'
+      allocation_status: 'pending' | 'approved' | 'rejected' | 'deployed' | 'completed' | 'released'
     }
     CompositeTypes: {
       [_ in never]: never
@@ -164,7 +692,7 @@ export type Tables<
     ? R
     : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
+      DefaultSchema["Views"])
     ? (DefaultSchema["Tables"] &
         DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
