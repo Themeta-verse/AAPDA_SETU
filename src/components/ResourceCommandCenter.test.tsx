@@ -352,4 +352,27 @@ describe('ResourceCommandCenter Component', () => {
 
     expect(await screen.findByText(/Connection Offline/i)).toBeInTheDocument();
   });
+
+  it('renders isolated query error notice with retry button when database tables return error or 404', async () => {
+    const errorClient = {
+      from: () => ({
+        select: () => ({
+          order: () => Promise.resolve({ data: null, error: { message: "Could not find the table 'public.resources' in the schema cache" } }),
+        }),
+      }),
+    };
+
+    render(
+      <ResourceCommandCenter
+        language="en"
+        user={responderUser()}
+        client={errorClient}
+      />
+    );
+
+    expect(await screen.findByTestId('resource-query-error-notice')).toBeInTheDocument();
+    expect(screen.getByText(/Resource Data Notice/i)).toBeInTheDocument();
+    expect(screen.getByText(/Could not find the table 'public.resources'/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
+  });
 });

@@ -436,5 +436,26 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
       expect(screen.getByTestId('operational-workspace')).toBeDefined();
       expect(screen.getByTestId('operational-user-management')).toBeDefined();
     });
+
+    it('renders operational workspace directly when user is confirmed operational even if isResolving flag is present', () => {
+      mockUser = {
+        id: 'admin-active',
+        email: 'admin123@gmail.com',
+        app_metadata: {},
+      };
+      mockAuthLoading = false;
+      mockRoleState = {
+        role: 'admin',
+        isOperational: true,
+        isAdmin: true,
+        isSignedIn: true,
+        isResolving: true, // Should not block because isOperational is true
+      };
+
+      render(<Index />);
+
+      expect(screen.queryByTestId('role-resolution-loading')).toBeNull();
+      expect(screen.getByTestId('operational-workspace')).toBeDefined();
+    });
   });
 });

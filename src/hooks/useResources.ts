@@ -53,6 +53,7 @@ export interface UseResourcesOptions {
 export function useResources(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
+  const userId = user?.id;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
 
@@ -114,7 +115,7 @@ export function useResources(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [user, isOnline, client]);
+  }, [userId, isOnline, client]);
 
   useEffect(() => {
     fetchResources();
@@ -134,6 +135,7 @@ export function useResources(options?: UseResourcesOptions) {
 export function useResourceAllocations(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
+  const userId = user?.id;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
 
@@ -189,7 +191,7 @@ export function useResourceAllocations(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [user, isOnline, client]);
+  }, [userId, isOnline, client]);
 
   useEffect(() => {
     fetchAllocations();
@@ -208,6 +210,7 @@ export function useResourceAllocations(options?: UseResourcesOptions) {
 export function useResourceAuditLogs(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
+  const userId = user?.id;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
 
@@ -242,7 +245,7 @@ export function useResourceAuditLogs(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [user, isOnline, client]);
+  }, [userId, isOnline, client]);
 
   useEffect(() => {
     fetchLogs();
@@ -259,6 +262,7 @@ export function useResourceAuditLogs(options?: UseResourcesOptions) {
 export function useResourceCompatibility(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
+  const userId = user?.id;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
 
@@ -293,7 +297,7 @@ export function useResourceCompatibility(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [user, isOnline, client]);
+  }, [userId, isOnline, client]);
 
   useEffect(() => {
     fetchCompatibilities();

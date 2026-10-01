@@ -54,6 +54,9 @@ export function useAppRole(user: User | null | undefined): AppRoleState {
     return !(claim === 'admin' || claim === 'responder');
   });
 
+  const userId = user?.id;
+  const userClaim = user?.app_metadata?.role;
+
   useEffect(() => {
     if (!user) {
       setResolvedRole('citizen');
@@ -64,6 +67,12 @@ export function useAppRole(user: User | null | undefined): AppRoleState {
     const claim = user.app_metadata?.role;
     if (claim === 'admin' || claim === 'responder') {
       setResolvedRole(claim);
+      setIsResolving(false);
+      return;
+    }
+
+    // Once an operational role is already confirmed for this user, do not re-trigger async resolution
+    if (resolvedRole === 'admin' || resolvedRole === 'responder') {
       setIsResolving(false);
       return;
     }
@@ -82,8 +91,6 @@ export function useAppRole(user: User | null | undefined): AppRoleState {
         if (cancelled) return;
         if (!error && data?.role && isAppRole(data.role) && data.role !== 'citizen') {
           setResolvedRole(data.role);
-          // Background trigger to sync session token if possible
-          supabase.auth.refreshSession().catch(() => {});
         } else {
           setResolvedRole(readAppRole(user));
         }
@@ -99,14 +106,17 @@ export function useAppRole(user: User | null | undefined): AppRoleState {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [userId, userClaim, resolvedRole]);
 
-  const role = resolvedRole;
+  const role = (userClaim === 'admin' || userClaim === 'responder') ? userClaim : resolvedRole;
+  const isOperational = role === 'responder' || role === 'admin';
+
   return {
     role,
-    isOperational: role === 'responder' || role === 'admin',
+    isOperational,
     isAdmin: role === 'admin',
     isSignedIn: !!user,
-    isResolving,
+    // When role is confirmed operational (admin or responder), authorization resolution is complete
+    isResolving: isOperational ? false : isResolving,
   };
 }

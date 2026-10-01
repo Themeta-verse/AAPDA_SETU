@@ -420,19 +420,24 @@ export function ResourceCommandCenter({
   const {
     allocations,
     loading: loadingAllocations,
+    error: allocationsError,
     refetch: refetchAllocations,
   } = useResourceAllocations({ client, user });
 
   const {
     compatibilities,
     loading: loadingCompatibilities,
+    error: compatibilityError,
   } = useResourceCompatibility({ client, user });
 
   const {
     logs: auditLogs,
     loading: loadingAuditLogs,
+    error: auditLogsError,
     refetch: refetchLogs,
   } = useResourceAuditLogs({ client, user });
+
+  const queryError = resourceError || allocationsError || compatibilityError || auditLogsError;
 
   const { incidents } = useIncidents(user, { client, enabled: !!user });
 
@@ -757,6 +762,34 @@ export function ResourceCommandCenter({
           </div>
           <button onClick={clearError} className="p-1 hover:bg-danger/20 rounded">
             <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Failure-isolated Resource Query Error Notice */}
+      {queryError && (
+        <div
+          className="glass-card p-3.5 rounded-xl border border-warning/40 bg-warning/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
+          data-testid="resource-query-error-notice"
+        >
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-foreground">
+                Resource Data Notice
+              </p>
+              <p className="text-muted-foreground mt-0.5">
+                {queryError}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={loadingResources || isSubmitting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/20 hover:bg-warning/30 text-warning font-semibold transition-colors flex-shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingResources ? 'animate-spin' : ''}`} />
+            <span>Retry</span>
           </button>
         </div>
       )}

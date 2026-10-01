@@ -115,4 +115,20 @@ describe('useAppRole hook', () => {
     expect(result.current.isOperational).toBe(false);
     expect(result.current.isAdmin).toBe(false);
   });
+
+  it('guarantees isResolving is false once user is operational (admin)', () => {
+    const adminUser = userWith({ role: 'admin' });
+    const { result } = renderHook(() => useAppRole(adminUser));
+
+    expect(result.current.isOperational).toBe(true);
+    expect(result.current.isResolving).toBe(false);
+  });
+
+  it('guarantees isResolving is false once user is operational (responder)', () => {
+    const responderUser = userWith({ role: 'responder' });
+    const { result } = renderHook(() => useAppRole(responderUser));
+
+    expect(result.current.isOperational).toBe(true);
+    expect(result.current.isResolving).toBe(false);
+  });
 });

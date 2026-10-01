@@ -73,7 +73,8 @@ const Index = () => {
   }
 
   // STEP 4: Prevent premature rendering of citizen dashboard while role is still resolving.
-  if (authLoading || (user && isResolving)) {
+  // Once confirmed operational (admin or responder), authorization resolution is complete.
+  if (authLoading || (user && isResolving && !isOperational)) {
     return (
       <div
         className="min-h-screen bg-background flex flex-col items-center justify-center p-4"
