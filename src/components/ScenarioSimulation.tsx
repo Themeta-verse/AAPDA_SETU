@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Waves, Zap, CloudRain, RotateCcw, Radio, AlertTriangle } from 'lucide-react';
-import { type Language, translations, voiceAlertTexts, speakAlert } from '@/lib/translations';
+import { type Language, translations, voiceAlertTexts } from '@/lib/translations';
+import { speak } from '@/voice/speech';
 import { type MonitoringData } from '@/lib/monitoringData';
 
 /**
@@ -40,9 +41,12 @@ export function ScenarioSimulation({ language, activeScenario, onSimulate }: Sce
   const handleSimulate = (scenario: ScenarioType) => {
     onSimulate(scenario);
     if (scenario) {
+      // Drill narration for an explicitly started simulation, played through
+      // the single speech engine. This text describes the DRILL, never live
+      // conditions — live alerts are built from observed state elsewhere.
       const voiceKey = scenario === 'highWave' ? 'highWave' : scenario === 'tsunami' ? 'tsunami' : 'flood';
       const text = voiceAlertTexts[language][voiceKey];
-      if (text) speakAlert(text, language);
+      if (text) void speak(text, { language });
     }
   };
 

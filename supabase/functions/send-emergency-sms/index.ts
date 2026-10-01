@@ -13,7 +13,10 @@ interface SendSmsRequest {
   severity: 'moderate' | 'high' | 'critical';
   user_location: { latitude: number; longitude: number };
   risk_data: {
-    tide_level: number | null;
+    // Significant wave height from Open-Meteo Marine. Named `wave_height`
+    // because no tide gauge is integrated; labelling it `tide_level` (as an
+    // earlier payload did) misstates the SMS line below.
+    wave_height: number | null;
     wind_speed: number | null;
     rain_probability: number | null;
     risk_level: string;
@@ -85,8 +88,8 @@ function generateSmsMessage(
   message += `Time: ${timestamp} IST\n`;
   message += `Location: Near Juhu Beach, Mumbai (${userLocation.latitude.toFixed(4)}°N, ${userLocation.longitude.toFixed(4)}°E)\n`;
 
-  if (riskData.tide_level !== null) {
-    message += `Tide: ${riskData.tide_level}m\n`;
+  if (riskData.wave_height !== null && riskData.wave_height !== undefined) {
+    message += `Wave: ${riskData.wave_height}m\n`;
   }
   if (riskData.wind_speed !== null) {
     message += `Wind: ${riskData.wind_speed} km/h\n`;

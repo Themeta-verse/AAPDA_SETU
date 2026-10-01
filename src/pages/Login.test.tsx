@@ -21,8 +21,8 @@ vi.mock('@/hooks/useAuth', () => ({
 vi.mock('@/hooks/useGeolocation', () => ({
   useGeolocation: () => ({
     requestLocation: mockRequestLocation,
-    permissionGranted: false,
-    loading: false,
+    hasFix: false,
+    status: 'idle',
   }),
 }));
 

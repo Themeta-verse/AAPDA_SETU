@@ -12,8 +12,8 @@ vi.mock('@/components/MonitoringDashboard', () => ({
 vi.mock('@/components/LocationTracker', () => ({
   LocationTracker: () => <div data-testid="location-tracker">Location Tracker</div>,
 }));
-vi.mock('@/components/TideForecast', () => ({
-  TideForecast: () => <div data-testid="tide-forecast">Tide Forecast</div>,
+vi.mock('@/components/WaveForecast', () => ({
+  WaveForecast: () => <div data-testid="wave-forecast">Wave Forecast</div>,
 }));
 vi.mock('@/components/AlertCardsSection', () => ({
   AlertCardsSection: () => <div data-testid="alert-cards">Alert Cards</div>,
@@ -127,6 +127,10 @@ vi.mock('@/hooks/useMonitoring', () => ({
     marine: { fetchedAt: new Date() },
     earthquakes: { fetchedAt: new Date() },
     sourceStatus: 'ok',
+    // The real hook also exposes the canonical assessment and the tri-state
+    // tsunami flag; the banner reason is derived from these.
+    assessment: { dimensions: {}, officialWarningActive: null },
+    tsunamiRisk: null,
   }),
 }));
 
@@ -160,6 +164,10 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
   beforeEach(() => {
     vi.clearAllMocks();
     window.scrollTo = vi.fn();
+    // Index mounts the real CoastalIntelligenceProvider, which polls live
+    // sources on mount. Fail every request: the page must render honest
+    // unknown states, and the test must never touch the network.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline in test')));
   });
 
   describe('Citizen Experience', () => {
@@ -170,6 +178,7 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
         isOperational: false,
         isAdmin: false,
         isSignedIn: true,
+        isResolving: false,
       };
     });
 
@@ -179,6 +188,14 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
       expect(screen.queryByTestId('operational-nav-badge')).toBeNull();
       expect(screen.queryByTestId('preview-mode-banner')).toBeNull();
       expect(screen.queryByTestId('operational-workspace')).toBeNull();
+    });
+
+    it('renders the page inside the single shared pipeline without throwing', () => {
+      // Regression: Index called useMonitoring() above the provider, which
+      // threw "must be used inside a provider" and blanked the whole page for
+      // every signed-in load. Rendering here proves the ordering is fixed.
+      render(<Index />);
+      expect(screen.getByTestId('citizen-dashboard')).toBeDefined();
     });
 
     it('renders normal citizen monitoring sections and reporting', () => {
@@ -214,6 +231,7 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
         isOperational: false,
         isAdmin: false,
         isSignedIn: true,
+        isResolving: false,
       };
 
       render(<Index />);
@@ -238,6 +256,7 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
         isOperational: true,
         isAdmin: false,
         isSignedIn: true,
+        isResolving: false,
       };
     });
 
@@ -311,6 +330,7 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
         isOperational: true,
         isAdmin: true,
         isSignedIn: true,
+        isResolving: false,
       };
     });
 
@@ -371,6 +391,7 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
         isOperational: true,
         isAdmin: true,
         isSignedIn: true,
+        isResolving: false,
       };
     });
 

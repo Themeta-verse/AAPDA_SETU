@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { type Language } from '@/lib/translations';
 import { useMonitoring } from '@/hooks/useMonitoring';
+import { CoastalIntelligenceProvider } from '@/hooks/CoastalIntelligenceProvider';
 import { useAuth } from '@/hooks/useAuth';
 import { useAppRole } from '@/hooks/useAppRole';
 import { useSMSAlert } from '@/hooks/useSMSAlert';
@@ -23,7 +24,7 @@ import { Chatbot } from '@/components/Chatbot';
 import { TouristMode } from '@/components/TouristMode';
 import { MobileEmergencyAlert } from '@/components/MobileEmergencyAlert';
 import { VoiceAlertGuide } from '@/components/VoiceAlertGuide';
-import { TideForecast } from '@/components/TideForecast';
+import { WaveForecast } from '@/components/WaveForecast';
 import { EmergencyBroadcastBanner } from '@/components/EmergencyBroadcastBanner';
 import { LocationTracker } from '@/components/LocationTracker';
 import { CitizenReporting } from '@/components/CitizenReporting';
@@ -34,14 +35,21 @@ import { DataSourcesFooter } from '@/components/DataSourcesFooter';
 import { LogOut, User, Bell, CheckCircle, AlertCircle, FlaskConical, RefreshCw, Wifi, WifiOff, Clock, Upload, Shield, Radio } from 'lucide-react';
 
 const Index = () => {
+  // The provider MUST wrap the content: `useMonitoring` (and everything below)
+  // reads the single shared pipeline via `useSharedCoastalIntelligence`, which
+  // throws outside a provider. Calling the hook above the provider renders a
+  // blank page for every signed-in load instead of the dashboard.
+  return (
+    <CoastalIntelligenceProvider>
+      <IndexContent />
+    </CoastalIntelligenceProvider>
+  );
+};
+
+const IndexContent = () => {
   const [language, setLanguage] = useState<Language>('en');
   const urban = useUrbanContext();
-  const monitoringCoords = { latitude: urban.context.latitude, longitude: urban.context.longitude };
-  const { data, alerts, clock, marine, earthquakes, sourceStatus } = useMonitoring(
-    8000,
-    monitoringCoords,
-    urban.context.isCoastal
-  );
+  const { data, alerts, clock, marine, earthquakes, sourceStatus, assessment, tsunamiRisk } = useMonitoring(8000);
   const { user, loading: authLoading, signOut } = useAuth();
   const { role, isOperational, isResolving } = useAppRole(user);
   const { isMonitoring, lastAlertSent, lastAlertEvent, lastAlertTestMode, error: smsError, clearError, testSMSAlert, riskZones } = useSMSAlert();
@@ -71,6 +79,22 @@ const Index = () => {
       chosenWorkspace: isOperationalWorkspace ? 'OPERATIONAL ADMINISTRATION/RESPONSE WORKSPACE' : 'CITIZEN DASHBOARD',
     });
   }
+
+  // The banner states the single dimension that drove the verdict, rather than
+  // a synthesised sentence. Null when nothing resolved, so the banner falls
+  // back to its own unknown-state wording instead of inventing a cause.
+  // Declared before any early return: hooks must run in the same order on
+  // every render, including the role-resolution loading state below.
+  const drivingReason = useMemo(() => {
+    const order: Record<string, number> = { severe: 3, high: 2, elevated: 1 };
+    const resolved = Object.values(assessment.dimensions)
+      .filter((d) => order[d.state] !== undefined)
+      .sort((a, b) => order[b.state] - order[a.state]);
+    const top = resolved[0];
+    if (!top) return null;
+    // `basis` is the rule's own factual statement of what it inspected.
+    return top.triggered[0]?.basis ?? top.label;
+  }, [assessment]);
 
   // STEP 4: Prevent premature rendering of citizen dashboard while role is still resolving.
   // Once confirmed operational (admin or responder), authorization resolution is complete.
@@ -103,7 +127,10 @@ const Index = () => {
   };
 
   const activeData: MonitoringData = activeScenario ? getScenarioData(activeScenario)! : data;
-  const activeAlerts = activeScenario ? getAlerts(activeData, undefined, urban.context.isCoastal) : alerts;
+  // The USGS tsunami flag is authoritative and tri-state. Passing it through
+  // unchanged is what keeps the alert cards from inferring a tsunami out of
+  // wave height and wind.
+  const activeAlerts = activeScenario ? getAlerts(activeData, tsunamiRisk) : alerts;
 
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
   const displayLocation = urban.context.zoneName
@@ -116,8 +143,9 @@ const Index = () => {
       <EmergencyBroadcastBanner
         language={language}
         riskLevel={activeData.riskLevel}
-        activeScenario={activeScenario}
-        locationName={displayLocation}
+        officialWarningActive={assessment.officialWarningActive}
+        reason={drivingReason}
+        locationLabel={displayLocation}
       />
 
       {/* Top bar */}
@@ -281,7 +309,7 @@ const Index = () => {
         <div className="fixed top-20 left-4 right-4 md:left-auto md:right-4 md:w-80 z-40">
           <div className={`glass-card p-3 rounded-xl border-2 animate-slide-in ${
             smsError ? 'border-danger/30 bg-danger/5' : 'border-safe/30 bg-safe/5'
-          }`}>
+              }`} data-testid="threat-level">
             <div className="flex items-start gap-2">
               {smsError ? (
                 <AlertCircle className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" />
@@ -364,7 +392,7 @@ const Index = () => {
             <div className="p-3.5 rounded-xl border border-border bg-card/60">
               <span className="text-[11px] text-muted-foreground uppercase font-medium">Threat Level</span>
               <p className={`text-xs font-bold mt-1 uppercase ${
-                activeData.riskLevel === 'high' || activeData.riskLevel === 'severe'
+                activeData.riskLevel === 'high' || activeData.riskLevel === 'critical'
                   ? 'text-danger'
                   : activeData.riskLevel === 'moderate'
                   ? 'text-warning'
@@ -451,7 +479,7 @@ const Index = () => {
             nearestSafeLocation={urban.safeLocations[0] || null}
           />
 
-          <TideForecast
+          <WaveForecast
             language={language}
             marine={marine}
             isCoastal={urban.context.isCoastal}

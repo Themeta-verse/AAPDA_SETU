@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Volume2, VolumeX, Bot, Waves, Zap, CloudRain, AlertTriangle, Megaphone } from 'lucide-react';
-import { type Language, translations, voiceAlertTexts, speakAlert, stopSpeaking } from '@/lib/translations';
+import { type Language, translations, voiceAlertTexts } from '@/lib/translations';
+import { speak, stopSpeech } from '@/voice/speech';
 import { type RiskLevel } from '@/lib/monitoringData';
 
 interface VoiceAlertGuideProps {
@@ -22,15 +23,22 @@ export function VoiceAlertGuide({ language, riskLevel }: VoiceAlertGuideProps) {
 
   const handleSpeak = async (key: string) => {
     if (speaking === key) {
-      stopSpeaking();
+      stopSpeech();
       setSpeaking(null);
       return;
     }
-    stopSpeaking();
+    stopSpeech();
     const text = voiceAlertTexts[language][key];
     if (text) {
       setSpeaking(key);
-      await speakAlert(text, language, () => setSpeaking(null));
+      // Sample alert read through the single speech engine. These are fixed
+      // guide samples, explicitly played by the user — never live state.
+      const result = await speak(text, {
+        language,
+        onEnd: () => setSpeaking(null),
+        onError: () => setSpeaking(null),
+      });
+      if (result.kind !== 'playing') setSpeaking(null);
     }
   };
 

@@ -1,5 +1,3 @@
-import { supabase } from '@/integrations/supabase/client';
-
 export type Language = 'en' | 'hi' | 'mr' | 'gu';
 
 export const languageNames: Record<Language, string> = {
@@ -449,6 +447,15 @@ export const translations: Record<Language, Record<string, string>> = {
   },
 };
 
+/**
+ * Fixed drill/guide narration samples, keyed by language.
+ *
+ * These are explicitly user-initiated samples for the scenario simulator and
+ * the voice guide — they describe a DRILL, never live conditions. Live spoken
+ * alerts are built from observed state by `buildVoiceScript`, and ALL
+ * playback (including these samples) goes through the single speech engine in
+ * `src/voice/speech.ts`.
+ */
 export const voiceAlertTexts: Record<Language, Record<string, string>> = {
   en: {
     highWave: 'Attention. High wave warning issued for Juhu Beach. Please move away from the shoreline and proceed to higher ground.',
@@ -475,124 +482,3 @@ export const voiceAlertTexts: Record<Language, Record<string, string>> = {
     rain: 'સલાહ. જુહુ બીચ માટે ભારે વરસાદ ચેતવણી. જળાશયો પાસે સાવધાની રાખો.',
   },
 };
-
-// --- ElevenLabs AI Voice System ---
-
-let currentAudio: HTMLAudioElement | null = null;
-
-const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL ?? '';
-const SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ?? '';
-
-// Track if ElevenLabs has failed so we skip it on subsequent calls in the same session
-let elevenLabsDisabled = false;
-
-export async function speakAlert(text: string, lang: Language, onEnd?: () => void): Promise<void> {
-  // Stop any current playback first
-  stopSpeaking();
-
-  // Skip ElevenLabs if previously failed or not configured
-  if (!SUPABASE_URL || elevenLabsDisabled) {
-    console.log('[BayWatch Voice] Using browser TTS');
-    speakAlertBrowserFallback(text, lang, onEnd);
-    return;
-  }
-
-  try {
-    console.log(`[BayWatch Voice] Generating AI voice for language: ${lang}`);
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    // verify_jwt = true on this function: send the signed-in user's access
-    // token so the gateway can verify the caller, falling back to the
-    // publishable key only before a session exists.
-    const { data: sessionData } = await supabase.auth.getSession();
-    const bearer = sessionData.session?.access_token ?? SUPABASE_KEY;
-
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/elevenlabs-tts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${bearer}`,
-      },
-      body: JSON.stringify({ text, language: lang }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-      console.warn('[BayWatch Voice] AI voice unavailable, using browser TTS:', err);
-      // Disable ElevenLabs for this session to avoid repeated failures
-      elevenLabsDisabled = true;
-      speakAlertBrowserFallback(text, lang, onEnd);
-      return;
-    }
-
-    const audioBlob = await response.blob();
-    if (audioBlob.size < 100) {
-      console.warn('[BayWatch Voice] Empty audio response, using browser TTS');
-      elevenLabsDisabled = true;
-      speakAlertBrowserFallback(text, lang, onEnd);
-      return;
-    }
-
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
-    currentAudio = audio;
-
-    audio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
-      if (onEnd) onEnd();
-    };
-
-    audio.onerror = (e) => {
-      console.error('[BayWatch Voice] Audio playback error:', e);
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
-      // Fallback on playback error too
-      speakAlertBrowserFallback(text, lang, onEnd);
-    };
-
-    await audio.play();
-    console.log('[BayWatch Voice] AI voice playing successfully');
-  } catch (err) {
-    console.warn('[BayWatch Voice] AI voice failed, using browser TTS:', err);
-    elevenLabsDisabled = true;
-    speakAlertBrowserFallback(text, lang, onEnd);
-  }
-}
-
-export function stopSpeaking() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    currentAudio = null;
-  }
-  // Also stop any browser TTS fallback
-  if ('speechSynthesis' in window) {
-    speechSynthesis.cancel();
-  }
-}
-
-// Browser TTS fallback if ElevenLabs is unavailable
-function speakAlertBrowserFallback(text: string, lang: Language, onEnd?: () => void): void {
-  if (!('speechSynthesis' in window)) {
-    if (onEnd) onEnd();
-    return;
-  }
-  speechSynthesis.cancel();
-  const speech = new SpeechSynthesisUtterance(text);
-  const langMap: Record<Language, string> = { en: 'en-IN', hi: 'hi-IN', mr: 'mr-IN', gu: 'gu-IN' };
-  speech.lang = langMap[lang];
-  speech.rate = 1;
-  speech.pitch = 1;
-  if (onEnd) {
-    speech.onend = onEnd;
-    speech.onerror = () => onEnd();
-  }
-  speechSynthesis.speak(speech);
-}

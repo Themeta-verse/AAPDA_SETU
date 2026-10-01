@@ -78,15 +78,19 @@ export function useAppRole(user: User | null | undefined): AppRoleState {
     }
 
     // When app_metadata role is not yet elevated in the current token,
-    // verify against the authoritative profiles table row for this user
+    // verify against the authoritative profiles table row for this user.
+    // `Promise.resolve` lifts the supabase thenable (which has no `.catch`)
+    // into a real promise so network failures still reach the fallback.
     let cancelled = false;
     setIsResolving(true);
 
-    supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
+    Promise.resolve(
+      supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+    )
       .then(({ data, error }) => {
         if (cancelled) return;
         if (!error && data?.role && isAppRole(data.role) && data.role !== 'citizen') {

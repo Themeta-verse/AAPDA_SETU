@@ -155,12 +155,6 @@ export function useOfflineIncidentQueue() {
       photoName,
       latitude,
       longitude,
-      createdAt: '',
-      status: 'queued',
-      retryCount: 0,
-      lastError: null,
-      localQueueId: '',
-      id: '',
     });
 
     await refreshStats();

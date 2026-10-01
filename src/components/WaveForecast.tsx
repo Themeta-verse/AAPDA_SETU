@@ -6,7 +6,7 @@ import { type Language, translations } from '@/lib/translations';
 import { statusHasMeasurements } from '@/lib/monitoringData';
 import type { NormalizedMarine } from '@/hooks/useWeatherData';
 
-interface TideForecastProps {
+interface WaveForecastProps {
   language: Language;
   marine: NormalizedMarine;
   isCoastal?: boolean;
@@ -27,9 +27,21 @@ function formatHour(iso: string): string {
   return match ? `${match[2]}:${match[3]}` : iso;
 }
 
-export function TideForecast({ language, marine, isCoastal = true, locationName }: TideForecastProps) {
+export function WaveForecast({ language, marine, isCoastal = true, locationName }: WaveForecastProps) {
   const t = translations[language];
   const { status } = marine;
+
+  // Hooks before any early return: calling useMemo after the `!isCoastal`
+  // return below would change the hook order when the zone switches between
+  // coastal and inland, crashing the render.
+  const data = useMemo(
+    () =>
+      marine.hourly.map((point) => ({
+        hour: formatHour(point.time),
+        waveHeight: point.waveHeight,
+      })),
+    [marine.hourly]
+  );
 
   if (!isCoastal) {
     return (
@@ -52,15 +64,7 @@ export function TideForecast({ language, marine, isCoastal = true, locationName 
     );
   }
 
-  const data = useMemo(
-    () =>
-      marine.hourly.map((point) => ({
-        hour: formatHour(point.time),
-        waveHeight: point.waveHeight,
-      })),
-    [marine.hourly]
-  );
-
+  // Coastal path: `data` above is already memoised before the early return.
   const heights = data.map((d) => d.waveHeight);
   const maxWave = heights.length ? Math.max(...heights) : null;
   const minWave = heights.length ? Math.min(...heights) : null;

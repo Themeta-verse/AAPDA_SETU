@@ -378,6 +378,10 @@ describe('6 & 7. Authorization & Role Security', () => {
       name: 'Unauthorized Pump',
       resourceType: 'water_pump',
       quantity: 1,
+      zoneId: null,
+      latitude: null,
+      longitude: null,
+      capacity: null,
       createdBy: 'citizen-user',
     });
 

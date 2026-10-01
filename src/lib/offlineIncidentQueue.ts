@@ -51,14 +51,34 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-function withStore(mode: IDBTransactionMode, callback: (store: IDBObjectStore) => IDBRequest): Promise<any> {
+/**
+ * Run an IndexedDB operation and resolve with its outcome.
+ *
+ * The callback may return either the raw IDBRequest (simple get/add/put/
+ * delete) or a Promise that settles when a multi-step read-modify-write
+ * finishes. Both shapes occur in this file, and the previous signature only
+ * accepted IDBRequest: promise-returning callers had `.onsuccess` assigned
+ * onto a Promise object, which never fires, so queue reads and status
+ * updates hung forever without resolving or rejecting.
+ */
+function withStore<T>(mode: IDBTransactionMode, callback: (store: IDBObjectStore) => IDBRequest | Promise<T>): Promise<T> {
   return openDB().then(db => {
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, mode);
       const store = transaction.objectStore(STORE_NAME);
-      const request = callback(store);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      let result: IDBRequest | Promise<T>;
+      try {
+        result = callback(store);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      if (result instanceof Promise) {
+        result.then(resolve, reject);
+      } else {
+        result.onsuccess = () => resolve(result.result);
+        result.onerror = () => reject(result.error);
+      }
       transaction.oncomplete = () => db.close();
       transaction.onerror = () => reject(transaction.error);
     });
@@ -69,11 +89,14 @@ export function generateQueueId(): string {
   return `queue_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
-export async function queueIncident(incident: Omit<QueuedIncident, 'localQueueId' | 'status' | 'retryCount' | 'lastError' | 'createdAt'>): Promise<string> {
+export async function queueIncident(incident: Omit<QueuedIncident, 'localQueueId' | 'status' | 'retryCount' | 'lastError' | 'createdAt' | 'id'>): Promise<string> {
   const localQueueId = generateQueueId();
   const now = new Date().toISOString();
   const dbIncident: DBIncident = {
     ...incident,
+    // The server assigns the permanent id on sync; until then the local queue
+    // id is the incident's identity (it is also the store keyPath).
+    id: localQueueId,
     localQueueId,
     status: 'queued',
     retryCount: 0,

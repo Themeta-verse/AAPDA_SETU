@@ -72,16 +72,15 @@ const mapLabels: Record<string, Record<string, string>> = {
   },
 };
 
-function getLocationTypeIcon(type: SafeLocation['location_type']) {
+function getLocationTypeIcon(type: SafeLocation['locationType']) {
   switch (type) {
     case 'hospital':
-    case 'medical_facility':
       return Hospital;
     case 'police_station':
       return Siren;
     case 'fire_station':
       return Flame;
-    case 'emergency_assembly_point':
+    case 'assembly_point':
       return Users;
     case 'shelter':
     case 'relief_center':
@@ -90,16 +89,15 @@ function getLocationTypeIcon(type: SafeLocation['location_type']) {
   }
 }
 
-function getLocationTypeBadge(type: SafeLocation['location_type']) {
+function getLocationTypeBadge(type: SafeLocation['locationType']) {
   switch (type) {
     case 'hospital':
-    case 'medical_facility':
       return { label: 'Medical / Hospital', bg: 'bg-warning/10 text-warning border-warning/20' };
     case 'police_station':
       return { label: 'Police Station', bg: 'bg-primary/10 text-primary border-primary/20' };
     case 'fire_station':
       return { label: 'Fire Service', bg: 'bg-danger/10 text-danger border-danger/20' };
-    case 'emergency_assembly_point':
+    case 'assembly_point':
       return { label: 'Assembly Point', bg: 'bg-safe/10 text-safe border-safe/20' };
     case 'shelter':
     case 'relief_center':
@@ -198,8 +196,8 @@ export function EvacuationMap({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {safeLocations.map((loc) => {
-              const Icon = getLocationTypeIcon(loc.location_type);
-              const badge = getLocationTypeBadge(loc.location_type);
+              const Icon = getLocationTypeIcon(loc.locationType);
+              const badge = getLocationTypeBadge(loc.locationType);
               const directionsUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${centerLat}%2C${centerLon}%3B${loc.latitude}%2C${loc.longitude}`;
 
               return (
@@ -247,7 +245,7 @@ export function EvacuationMap({
                   <div className="pt-3 border-t border-border/50 flex items-center justify-between mt-2">
                     <span className="flex items-center gap-1 text-[11px] text-safe font-medium">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      {loc.status === 'active' ? 'Operational' : 'Standby'}
+                      {loc.isActive ? 'Operational' : 'Standby'}
                     </span>
                     <a
                       href={directionsUrl}

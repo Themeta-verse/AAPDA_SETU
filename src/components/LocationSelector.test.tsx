@@ -80,15 +80,15 @@ describe('LocationSelector and EvacuationMap Urbanization', () => {
       {
         id: 'safe-1',
         name: 'Municipal Community Hall',
-        location_type: 'shelter' as const,
+        locationType: 'shelter' as const,
         city: 'Mumbai',
-        ward: 'F-North',
-        zone_id: 'zone-sion-flood',
+        zoneId: 'zone-sion-flood',
         latitude: 19.0400,
         longitude: 72.8600,
         capacity: 400,
         address: 'Sion Circle, Mumbai',
-        status: 'active' as const,
+        contactNumber: '112',
+        isActive: true,
       },
     ];
 

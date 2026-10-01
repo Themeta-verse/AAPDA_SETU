@@ -55,6 +55,12 @@ export function useWeatherData(
             waveHeight: null,
             waveDirection: null,
             wavePeriod: null,
+            // The weather endpoint publishes no marine fields; they stay null
+            // (absent) rather than zero, exactly like an unread marine source.
+            swellHeight: null,
+            swellDirection: null,
+            oceanCurrentVelocity: null,
+            seaSurfaceTemperature: null,
             hourly: [],
             windSpeed: typeof current.wind_speed_10m === 'number' ? current.wind_speed_10m : null,
             windDirection: typeof current.wind_direction_10m === 'number' ? current.wind_direction_10m : null,

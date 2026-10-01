@@ -18,7 +18,17 @@ import { saveToCache, loadFromCache } from '@/lib/offlineCache';
 const URBAN_CONTEXT_CACHE_KEY = 'urban_context_v1';
 
 export function useUrbanContext() {
-  const { position: gpsPosition, isTracking, error: gpsError } = useGeolocation();
+  const { position: gpsPosition, status: gpsStatus, statusMessage: gpsStatusMessage } = useGeolocation();
+  // Only genuine failure modes count as an error. Idle/locating/ready are not
+  // errors, so they surface as null rather than as a message.
+  const gpsError =
+    gpsStatus === 'denied' ||
+    gpsStatus === 'unavailable' ||
+    gpsStatus === 'timeout' ||
+    gpsStatus === 'unsupported' ||
+    gpsStatus === 'error'
+      ? gpsStatusMessage
+      : null;
 
   // Database loaded zones & safe locations
   const [zones, setZones] = useState<UrbanZone[]>(DEFAULT_URBAN_ZONES);

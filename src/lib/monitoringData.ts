@@ -118,7 +118,50 @@ export function deriveMonitoringData(
   rainProbability: number | null,
   status: SourceStatus,
   riskLevel: RiskLevelOrUnknown
+): MonitoringData;
+/**
+ * Urban-zone derivation with an explicit coastal flag.
+ *
+ * The multi-city layer monitors inland zones (river flood, waterlogging)
+ * where the coastal engine has no jurisdiction: there is no wave field to
+ * assess and no engine verdict to pass through. For those zones the caller
+ * passes `tsunamiRisk` and `isCoastal = false`, and risk is derived from the
+ * documented urban wind/rain thresholds below.
+ *
+ * Inland readings keep `waveHeight: null` (never a fake zero) and
+ * `seaCondition: null` (a sea-surface claim about an inland zone would be
+ * fiction). A missing wind or rain input yields no verdict (`riskLevel:
+ * null`), never a default "safe".
+ */
+export function deriveMonitoringData(
+  waveHeight: number | null,
+  windSpeed: number | null,
+  rainProbability: number | null,
+  status: SourceStatus,
+  tsunamiRisk: boolean,
+  isCoastal: boolean
+): MonitoringData;
+export function deriveMonitoringData(
+  waveHeight: number | null,
+  windSpeed: number | null,
+  rainProbability: number | null,
+  status: SourceStatus,
+  riskLevelOrTsunami: RiskLevelOrUnknown | boolean,
+  isCoastal?: boolean
 ): MonitoringData {
+  // Six-argument urban form: derive from the documented urban thresholds.
+  if (arguments.length === 6) {
+    return deriveUrbanMonitoringData(
+      waveHeight,
+      windSpeed,
+      rainProbability,
+      status,
+      riskLevelOrTsunami as boolean,
+      isCoastal as boolean
+    );
+  }
+
+  const riskLevel = riskLevelOrTsunami as RiskLevelOrUnknown;
   // No usable measurement at all: this is genuinely a no-data state.
   if (waveHeight === null && windSpeed === null && rainProbability === null) {
     return { ...emptyMonitoringData(), status };
@@ -130,6 +173,61 @@ export function deriveMonitoringData(
 
   return {
     waveHeight,
+    windSpeed,
+    rainProbability,
+    seaCondition,
+    riskLevel,
+    status,
+  };
+}
+
+/**
+ * Urban (coastal or inland) threshold derivation.
+ *
+ * Coastal thresholds mirror the legacy operational table; inland thresholds
+ * cover precipitation runoff, urban waterlogging and gale winds. Both are
+ * stated here, once, so every urban zone is evaluated by the same rules.
+ */
+function deriveUrbanMonitoringData(
+  waveHeight: number | null,
+  windSpeed: number | null,
+  rainProbability: number | null,
+  status: SourceStatus,
+  tsunamiRisk: boolean,
+  isCoastal: boolean
+): MonitoringData {
+  if (isCoastal) {
+    if (waveHeight === null || windSpeed === null || rainProbability === null) {
+      return { ...emptyMonitoringData(), status };
+    }
+  } else if (windSpeed === null || rainProbability === null) {
+    // Inland: wave height is not applicable (stays null, never zero) and the
+    // missing wind/rain input means no verdict can be reached.
+    return { ...emptyMonitoringData(), status };
+  }
+
+  let seaCondition: SeaCondition | null = null;
+  if (isCoastal) {
+    seaCondition = 'calm';
+    if (windSpeed! > 25) seaCondition = 'veryRough';
+    else if (windSpeed! > 15) seaCondition = 'rough';
+  }
+
+  let riskLevel: RiskLevelOrUnknown = 'safe';
+  if (isCoastal) {
+    if (tsunamiRisk || (waveHeight !== null && waveHeight > 4.0) || windSpeed! > 40 || rainProbability! > 85) riskLevel = 'critical';
+    else if ((waveHeight !== null && waveHeight > 3.5) || windSpeed! > 30 || rainProbability! > 70) riskLevel = 'high';
+    else if ((waveHeight !== null && waveHeight > 2.8) || windSpeed! > 15 || rainProbability! > 50) riskLevel = 'moderate';
+  } else {
+    // Inland urban hazard thresholds: precipitation runoff, urban
+    // waterlogging, and gale winds.
+    if (windSpeed! > 40 || rainProbability! > 85) riskLevel = 'critical';
+    else if (windSpeed! > 30 || rainProbability! > 70) riskLevel = 'high';
+    else if (windSpeed! > 15 || rainProbability! > 50) riskLevel = 'moderate';
+  }
+
+  return {
+    waveHeight: isCoastal ? waveHeight : null,
     windSpeed,
     rainProbability,
     seaCondition,

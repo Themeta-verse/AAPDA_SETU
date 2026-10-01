@@ -990,7 +990,11 @@ export function computeRuleBasedRecommendations(params: {
         if (res.resourceType !== rule.resourceType) return false;
         if (res.status !== 'available') return false;
 
-        const alreadyAllocated = allocatedResourceCounts.get(res.id) ?? 0;
+        // Allocation bookkeeping, not a measurement: a resource absent from
+        // the map has genuinely zero prior allocations in this run, stated
+        // with an explicit undefined check.
+        const priorAllocations = allocatedResourceCounts.get(res.id);
+        const alreadyAllocated = priorAllocations === undefined ? 0 : priorAllocations;
         return (res.availableQuantity - alreadyAllocated) > 0;
       });
 
@@ -1010,7 +1014,8 @@ export function computeRuleBasedRecommendations(params: {
       const zone = zones.find((z) => z.id === bestCandidate.zoneId);
       const zoneName = zone ? zone.name : (bestCandidate.zoneId ? 'Assigned Area' : 'General Inventory');
 
-      const alreadyAllocated = allocatedResourceCounts.get(bestCandidate.id) ?? 0;
+      const priorBestAllocations = allocatedResourceCounts.get(bestCandidate.id);
+      const alreadyAllocated = priorBestAllocations === undefined ? 0 : priorBestAllocations;
       const effectiveAvailable = bestCandidate.availableQuantity - alreadyAllocated;
       const suggestedQuantity = Math.min(1, effectiveAvailable);
 

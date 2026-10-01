@@ -71,7 +71,7 @@ describe('Urban Location Architecture & Context', () => {
       {
         id: 'res-kurla-boat',
         name: 'Rescue Boat Kurla Unit 1',
-        resourceType: 'rescue_boat',
+        resourceType: 'boat',
         status: 'available',
         zoneId: 'zone-mumbai-kurla',
         availableQuantity: 2,
@@ -83,7 +83,7 @@ describe('Urban Location Architecture & Context', () => {
       {
         id: 'res-juhu-boat',
         name: 'Juhu Coastal Rescue Boat',
-        resourceType: 'rescue_boat',
+        resourceType: 'boat',
         status: 'available',
         zoneId: 'zone-mumbai-juhu',
         availableQuantity: 3,
@@ -111,11 +111,9 @@ describe('Urban Location Architecture & Context', () => {
         {
           id: 'comp-1',
           incidentType: 'flooding',
-          resourceType: 'rescue_boat',
+          resourceType: 'boat',
           priority: 1,
-          minQuantity: 1,
-          isActive: true,
-          description: 'Deploy rescue boat for urban flooding',
+          notes: 'Deploy rescue boat for urban flooding',
         },
       ],
       allocations: [],

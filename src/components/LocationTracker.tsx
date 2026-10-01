@@ -1,12 +1,33 @@
 import { motion } from 'framer-motion';
-import { MapPin, Navigation, Compass, AlertTriangle, Locate, ShieldCheck } from 'lucide-react';
-import { type Language, translations } from '@/lib/translations';
-import { useGeolocation, calculateDistance } from '@/hooks/useGeolocation';
-import { type RiskLevel } from '@/lib/monitoringData';
+import { MapPin, Navigation, Compass, Locate, ShieldCheck, Info } from 'lucide-react';
+import { type Language } from '@/lib/translations';
+import {
+  useGeolocation,
+  calculateDistance,
+  getEvacuationDirectionTo,
+} from '@/hooks/useGeolocation';
+import { type RiskLevelOrUnknown } from '@/lib/monitoringData';
+
+/**
+ * Where you are, relative to the monitored zone.
+ *
+ * WHAT THIS NO LONGER CLAIMS
+ * --------------------------
+ * The previous version derived a safety verdict from distance alone: under
+ * 1 km rendered "EVACUATE NOW", under 3 km "Exercise caution", beyond that
+ * "You are safe". Distance from a zone centre is not a safety determination,
+ * and "you are safe" is not a conclusion this application is entitled to.
+ * Those verdicts are removed. What remains is geography stated as geography:
+ * your real position, your real fix accuracy, your real distance to the zone
+ * target, and a real compass direction to a real configured safe location.
+ *
+ * The zone risk tier (passed in from the monitoring pipeline) is shown as
+ * data, not derived here.
+ */
 
 interface LocationTrackerProps {
   language: Language;
-  riskLevel: RiskLevel;
+  riskLevel: RiskLevelOrUnknown;
   zoneName?: string;
   targetLat?: number;
   targetLon?: number;
@@ -19,36 +40,41 @@ interface LocationTrackerProps {
 
 const locationLabels: Record<Language, {
   title: string; yourLocation: string; distance: string; direction: string;
-  accuracy: string; requestLocation: string; moveInland: string; youAreSafe: string;
-  exerciseCaution: string; evacuateNow: string; nearestSafeZone: string;
+  accuracy: string; requestLocation: string; locating: string;
+  nearestSafeZone: string; zoneRisk: string; noSafeZone: string;
+  staleFix: string; noFixTitle: string;
 }> = {
   en: {
-    title: 'GPS Location & Distance', yourLocation: 'Your Location', distance: 'Distance to Risk Zone',
-    direction: 'Recommended Direction', accuracy: 'Accuracy', requestLocation: 'Enable GPS Tracking',
-    moveInland: 'Move to safe zone immediately', youAreSafe: 'You are at a safe distance',
-    exerciseCaution: 'Exercise caution — you are near the risk zone', evacuateNow: 'EVACUATE NOW — you are in the risk zone',
-    nearestSafeZone: 'Nearest Safe Zone',
+    title: 'GPS Location & Distance', yourLocation: 'Your Location', distance: 'Distance to Zone Target',
+    direction: 'Direction to Safe Location', accuracy: 'Accuracy', requestLocation: 'Enable GPS Tracking',
+    locating: 'Locating…', nearestSafeZone: 'Nearest Safe Zone', zoneRisk: 'Zone Risk (monitoring)',
+    noSafeZone: 'No safe location configured for this zone',
+    staleFix: 'This fix is old and may no longer be accurate.',
+    noFixTitle: 'Location not shared',
   },
   hi: {
-    title: 'GPS स्थान और दूरी', yourLocation: 'आपका स्थान', distance: 'जोखिम क्षेत्र से दूरी',
-    direction: 'अनुशंसित दिशा', accuracy: 'सटीकता', requestLocation: 'GPS ट्रैकिंग सक्षम करें',
-    moveInland: 'तुरंत सुरक्षित क्षेत्र में जाएं', youAreSafe: 'आप सुरक्षित दूरी पर हैं',
-    exerciseCaution: 'सावधानी बरतें — आप जोखिम क्षेत्र के करीब हैं', evacuateNow: 'अभी निकासी करें — आप जोखिम क्षेत्र में हैं',
-    nearestSafeZone: 'निकटतम सुरक्षित क्षेत्र',
+    title: 'GPS स्थान और दूरी', yourLocation: 'आपका स्थान', distance: 'क्षेत्र लक्ष्य से दूरी',
+    direction: 'सुरक्षित स्थान की दिशा', accuracy: 'सटीकता', requestLocation: 'GPS ट्रैकिंग सक्षम करें',
+    locating: 'स्थान खोजा जा रहा है…', nearestSafeZone: 'निकटतम सुरक्षित स्थान', zoneRisk: 'क्षेत्र जोखिम (निगरानी)',
+    noSafeZone: 'इस क्षेत्र के लिए कोई सुरक्षित स्थान कॉन्फ़िगर नहीं है',
+    staleFix: 'यह स्थिति पुरानी है और अब सटीक नहीं हो सकती।',
+    noFixTitle: 'स्थिति साझा नहीं की गई',
   },
   mr: {
-    title: 'GPS स्थान आणि अंतर', yourLocation: 'तुमचे स्थान', distance: 'धोका क्षेत्रापासून अंतर',
-    direction: 'शिफारस केलेली दिशा', accuracy: 'अचूकता', requestLocation: 'GPS ट्रॅकिंग सुरू करा',
-    moveInland: 'ताबडतोब सुरक्षित भागात जा', youAreSafe: 'तुम्ही सुरक्षित अंतरावर आहात',
-    exerciseCaution: 'सावधगिरी बाळगा — तुम्ही धोक्याच्या क्षेत्राजवळ आहात', evacuateNow: 'आता निर्वासन करा — तुम्ही धोक्याच्या क्षेत्रात आहात',
-    nearestSafeZone: 'जवळचे सुरक्षित क्षेत्र',
+    title: 'GPS स्थान आणि अंतर', yourLocation: 'तुमचे स्थान', distance: 'विभाग लक्ष्यापासून अंतर',
+    direction: 'सुरक्षित ठिकाणाची दिशा', accuracy: 'अचूकता', requestLocation: 'GPS ट्रॅकिंग सुरू करा',
+    locating: 'स्थान शोधत आहे…', nearestSafeZone: 'जवळचे सुरक्षित ठिकाण', zoneRisk: 'विभाग जोखीम (निरीक्षण)',
+    noSafeZone: 'या विभागासाठी कोणतेही सुरक्षित ठिकाण कॉन्फ़िगर केलेले नाही',
+    staleFix: 'ही स्थिती जुनी आहे आणि कदाचित अचूक नसेल।',
+    noFixTitle: 'स्थान शेअर केलेले नाही',
   },
   gu: {
-    title: 'GPS સ્થાન અને અંતર', yourLocation: 'તમારું સ્થાન', distance: 'જોખમ ઝોનથી અંતર',
-    direction: 'ભલામણ કરેલ દિશા', accuracy: 'ચોકસાઈ', requestLocation: 'GPS ટ્રેકિંગ સક્ષમ કરો',
-    moveInland: 'તરત સુરક્ષિત વિસ્તારમાં જાઓ', youAreSafe: 'તમે સુરક્ષિત અંતરે છો',
-    exerciseCaution: 'સાવધાની રાખો — તમે જોખમી ઝોન પાસે છો', evacuateNow: 'હમણાં ખાલી કરો — તમે જોખમી ઝોનમાં છો',
-    nearestSafeZone: 'નજીકનો સુરક્ષિત ઝોન',
+    title: 'GPS સ્થાન અને અંતર', yourLocation: 'તમારું સ્થાન', distance: 'ઝોન લક્ષ્યથી અંતર',
+    direction: 'સુરક્ષિત સ્થાનની દિશા', accuracy: 'ચોકસાઈ', requestLocation: 'GPS ટ્રેકિંગ સક્ષમ કરો',
+    locating: 'સ્થાન શોધી રહ્યું છે…', nearestSafeZone: 'નજીકનું સુરક્ષિત સ્થાન', zoneRisk: 'ઝોન જોખમ (મોનિટરિંગ)',
+    noSafeZone: 'આ ઝોન માટે કોઈ સુરક્ષિત સ્થાન ગોઠવેલ નથી',
+    staleFix: 'આ સ્થિતિ જૂની છે અને હવે સચોટ ન પણ હોય।',
+    noFixTitle: 'સ્થાન શેર કર્યું નથી',
   },
 };
 
@@ -61,37 +87,60 @@ export function LocationTracker({
   nearestSafeLocation,
 }: LocationTrackerProps) {
   const ll = locationLabels[language];
-  const { position, error, loading, permissionGranted, requestLocation, distanceToHazard, evacuationDirection } = useGeolocation(
-    { latitude: targetLat, longitude: targetLon, name: zoneName },
-    nearestSafeLocation ? { latitude: nearestSafeLocation.latitude, longitude: nearestSafeLocation.longitude, name: nearestSafeLocation.name } : null
-  );
+  const geo = useGeolocation();
 
-  const safeZoneDistance = position && nearestSafeLocation
-    ? calculateDistance(position.latitude, position.longitude, nearestSafeLocation.latitude, nearestSafeLocation.longitude)
-    : null;
+  // Real straight-line distance to the zone target, kilometres. Geography,
+  // not a verdict.
+  const distanceToTargetKm =
+    geo.position !== null
+      ? calculateDistance(geo.position.latitude, geo.position.longitude, targetLat, targetLon)
+      : null;
 
-  const getDistanceStatus = () => {
-    if (distanceToHazard === null) return null;
-    if (distanceToHazard < 1) return { text: ll.evacuateNow, color: 'text-danger', bg: 'bg-danger/10 border-danger/30' };
-    if (distanceToHazard < 3) return { text: ll.exerciseCaution, color: 'text-warning', bg: 'bg-warning/10 border-warning/30' };
-    return { text: ll.youAreSafe, color: 'text-safe', bg: 'bg-safe/10 border-safe/30' };
-  };
+  const safeZoneDistanceKm =
+    geo.position !== null && nearestSafeLocation
+      ? calculateDistance(
+          geo.position.latitude,
+          geo.position.longitude,
+          nearestSafeLocation.latitude,
+          nearestSafeLocation.longitude
+        )
+      : null;
 
-  const status = getDistanceStatus();
+  // Real compass direction to a real configured destination. Null when either
+  // endpoint is unknown — never a direction toward a hardcoded point.
+  const safeZoneDirection =
+    geo.position !== null && nearestSafeLocation
+      ? getEvacuationDirectionTo(
+          geo.position.latitude,
+          geo.position.longitude,
+          nearestSafeLocation.latitude,
+          nearestSafeLocation.longitude
+        )
+      : null;
 
-  if (!permissionGranted) {
+  if (!geo.hasFix) {
     return (
-      <section className="container py-6">
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={requestLocation}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-3 p-4 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
-        >
-          <Locate className="w-5 h-5 text-primary" />
-          <span className="font-semibold text-sm">{ll.requestLocation}</span>
-        </motion.button>
+      <section className="container py-6" aria-label={ll.title}>
+        <div className="glass-card rounded-2xl p-5">
+          <div className="flex items-start gap-3">
+            <Locate className="w-5 h-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="flex-1">
+              <h2 className="text-sm font-semibold mb-1">{ll.noFixTitle}</h2>
+              <p className="text-xs text-muted-foreground mb-3" data-testid="tracker-gps-message">
+                {geo.statusMessage}
+              </p>
+              <button
+                type="button"
+                onClick={geo.requestLocation}
+                disabled={geo.status === 'locating' || geo.status === 'unsupported'}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-60"
+                data-testid="tracker-request-location"
+              >
+                {geo.status === 'locating' ? ll.locating : ll.requestLocation}
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
     );
   }
@@ -100,7 +149,7 @@ export function LocationTracker({
     <section className="container py-6" aria-label={ll.title}>
       <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
         <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-          <Navigation className="w-6 h-6 text-primary" />
+          <Navigation className="w-6 h-6 text-primary" aria-hidden="true" />
           {ll.title}
         </h2>
 
@@ -108,72 +157,69 @@ export function LocationTracker({
           {/* Your location */}
           <div className="glass-card p-4 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
-              <MapPin className="w-4 h-4 text-primary" />
+              <MapPin className="w-4 h-4 text-primary" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">{ll.yourLocation}</span>
             </div>
-            <p className="text-sm font-mono font-bold">
-              {position ? `${position.latitude.toFixed(4)}°N, ${position.longitude.toFixed(4)}°E` : '—'}
+            <p className="text-sm font-mono font-bold" data-testid="tracker-coords">
+              {geo.formatted ?? '—'}
             </p>
-            {position && (
-              <p className="text-[10px] text-muted-foreground mt-1">{ll.accuracy}: ±{Math.round(position.accuracy)}m</p>
+            {geo.accuracyLabel && (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {ll.accuracy}: {geo.accuracyLabel}
+              </p>
+            )}
+            {geo.isStale && (
+              <p className="text-[10px] text-warning mt-1">{ll.staleFix}</p>
             )}
           </div>
 
-          {/* Distance */}
+          {/* Distance to zone target */}
           <div className="glass-card p-4 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
-              <Compass className="w-4 h-4 text-warning" />
+              <Compass className="w-4 h-4 text-warning" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">{ll.distance}</span>
             </div>
-            <p className={`text-2xl font-bold font-mono ${
-              distanceToHazard !== null && distanceToHazard < 1 ? 'text-danger' :
-              distanceToHazard !== null && distanceToHazard < 3 ? 'text-warning' : 'text-safe'
-            }`}>
-              {distanceToHazard !== null ? `${distanceToHazard.toFixed(1)} km` : '—'}
+            <p className="text-2xl font-bold font-mono" data-testid="tracker-distance">
+              {distanceToTargetKm !== null ? `${distanceToTargetKm.toFixed(1)} km` : '—'}
             </p>
             {zoneName && <p className="text-[10px] text-muted-foreground mt-1">Target: {zoneName}</p>}
           </div>
 
-          {/* Direction */}
+          {/* Direction to the configured safe location */}
           <div className="glass-card p-4 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
-              <Navigation className="w-4 h-4 text-safe" />
+              <Navigation className="w-4 h-4 text-safe" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">{ll.direction}</span>
             </div>
-            <p className="text-sm font-bold">{evacuationDirection || '—'}</p>
-            <p className="text-[10px] text-muted-foreground mt-1">{ll.moveInland}</p>
-          </div>
-
-          {/* Nearest safe zone */}
-          <div className="glass-card p-4 rounded-xl border-safe/20">
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldCheck className="w-4 h-4 text-safe" />
-              <span className="text-xs text-muted-foreground">{ll.nearestSafeZone}</span>
-            </div>
+            <p className="text-sm font-bold">{safeZoneDirection ?? '—'}</p>
             {nearestSafeLocation ? (
-              <>
-                <p className="text-xs font-medium text-foreground">{nearestSafeLocation.name}</p>
-                <p className="text-[10px] text-safe font-semibold mt-1">
-                  {safeZoneDistance !== null ? `${safeZoneDistance.toFixed(1)} km away` : 'Configured assembly point'}
-                </p>
-              </>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {nearestSafeLocation.name}
+                {safeZoneDistanceKm !== null ? ` · ${safeZoneDistanceKm.toFixed(1)} km` : ''}
+              </p>
             ) : (
-              <p className="text-xs text-muted-foreground italic">No safe zone configured in immediate area</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{ll.noSafeZone}</p>
             )}
           </div>
-        </div>
 
-        {/* Status bar */}
-        {status && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className={`mt-3 p-3 rounded-xl border ${status.bg} flex items-center gap-2`}
-          >
-            <AlertTriangle className={`w-4 h-4 ${status.color} flex-shrink-0`} />
-            <span className={`text-sm font-semibold ${status.color}`}>{status.text}</span>
-          </motion.div>
-        )}
+          {/* Zone risk tier from the monitoring pipeline, shown as data */}
+          <div className="glass-card p-4 rounded-xl border-safe/20">
+            <div className="flex items-center gap-2 mb-2">
+              {riskLevel === null ? (
+                <Info className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+              ) : (
+                <ShieldCheck className="w-4 h-4 text-safe" aria-hidden="true" />
+              )}
+              <span className="text-xs text-muted-foreground">{ll.zoneRisk}</span>
+            </div>
+            <p className="text-sm font-bold" data-testid="tracker-risk-note">
+              {riskLevel === null ? 'Unknown — no verdict' : riskLevel}
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Distance from the zone is not a safety determination. Follow official instruction.
+            </p>
+          </div>
+        </div>
       </motion.div>
     </section>
   );

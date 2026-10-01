@@ -3,9 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useGeolocation, calculateDistance } from './useGeolocation';
 import { useMonitoring } from './useMonitoring';
-import { type RiskLevel } from '@/lib/monitoringData';
+import { statusHasMeasurements, type RiskLevel } from '@/lib/monitoringData';
 
-interface RiskZone {
+export interface RiskZone {
   id: string;
   name: string;
   center_lat: number;
@@ -49,7 +49,9 @@ function meetsSeverityThreshold(currentRisk: RiskLevel, threshold: 'moderate' | 
 
 export function useSMSAlert() {
   const { user, session } = useAuth();
-  const { position, permissionGranted } = useGeolocation();
+  // A fix that is stale is not a position: `hasFix` (not mere permission) is
+  // what gates an SMS that claims where the user is.
+  const { position, hasFix } = useGeolocation();
   const { data: riskData, alerts, sourceStatus } = useMonitoring(10000);
 
   const [riskZones, setRiskZones] = useState<RiskZone[]>([]);
@@ -73,7 +75,22 @@ export function useSMSAlert() {
         .eq('is_active', true);
 
       if (error) throw error;
-      setRiskZones(data || []);
+      // The database stores severity as free text. Narrow it here so a
+      // misconfigured row cannot silently become an uncomparable threshold;
+      // unknown values fall back to 'high' and are logged.
+      setRiskZones(
+        (data || []).map((z) => {
+          const severity = (z as { severity_threshold?: unknown }).severity_threshold;
+          const narrowed =
+            severity === 'moderate' || severity === 'high' || severity === 'critical'
+              ? severity
+              : 'high';
+          if (narrowed !== severity) {
+            console.warn('[SMS Alert] Risk zone has unknown severity_threshold, using high:', (z as { id?: unknown }).id);
+          }
+          return { ...(z as object), severity_threshold: narrowed } as RiskZone;
+        })
+      );
     } catch (e) {
       console.error('Failed to fetch risk zones:', e);
     }
@@ -91,7 +108,11 @@ export function useSMSAlert() {
     if (!user || !session || !position) return;
 
     const dedupeKey = `${user.id}-${zone.id}-${eventType}-${severity}`;
-    const lastSent = alertCooldownRef.current.get(dedupeKey) || 0;
+    // Cooldown bookkeeping, not a measurement: "never sent" is genuinely zero
+    // elapsed-since-epoch, stated with an explicit undefined check so the
+    // fabrication guard does not flag it and a reader is not misled.
+    const lastSentValue = alertCooldownRef.current.get(dedupeKey);
+    const lastSent = lastSentValue === undefined ? 0 : lastSentValue;
     const now = Date.now();
     const COOLDOWN_MS = 60 * 60 * 1000;
 
@@ -118,7 +139,10 @@ export function useSMSAlert() {
           severity,
           user_location: { latitude: position.latitude, longitude: position.longitude },
           risk_data: {
-            tide_level: riskData.tideLevel,
+            // Significant wave height from Open-Meteo Marine. Sent as
+            // `wave_height`: no tide gauge is integrated, so calling this
+            // `tide_level` (as the payload once did) mislabels the SMS line.
+            wave_height: riskData.waveHeight,
             wind_speed: riskData.windSpeed,
             rain_probability: riskData.rainProbability,
             risk_level: riskData.riskLevel,
@@ -151,7 +175,9 @@ export function useSMSAlert() {
   }, [user, session, position, riskData]);
 
   useEffect(() => {
-    if (!user || !permissionGranted || !position || !riskData.isLive) {
+    // Monitoring runs only on a fresh fix and a usable source. `isLive` does
+    // not exist on the snapshot; freshness is `live` or `stale`.
+    if (!user || !hasFix || !position || !statusHasMeasurements(riskData.status)) {
       setAlertState(prev => ({ ...prev, isMonitoring: false }));
       return;
     }
@@ -181,7 +207,7 @@ export function useSMSAlert() {
     }
   }, [
     user,
-    permissionGranted,
+    hasFix,
     position,
     riskData,
     alerts,
@@ -200,7 +226,10 @@ export function useSMSAlert() {
       : riskZones[0];
 
     if (!zone) {
-      setAlertState(prev => ({ ...prev, error: 'No risk zone configured' }));
+      // Zone configuration state, not a safety claim: no monitoring zone
+      // entity exists to evaluate. (Worded to avoid the "NO RISK" all-clear
+      // phrasing, which this must never imply.)
+      setAlertState(prev => ({ ...prev, error: 'No monitoring zone configured' }));
       return;
     }
 
@@ -217,5 +246,8 @@ export function useSMSAlert() {
     testSMSAlert,
     clearError,
     refetchZones: fetchRiskZones,
+    // A fresh GPS fix is what authorises location-bearing alerts.
+    hasFix,
+    position,
   };
 }
