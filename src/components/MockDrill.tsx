@@ -1,7 +1,22 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, RotateCcw, CheckCircle, AlertTriangle, ChevronRight } from 'lucide-react';
-import { type Language, translations, voiceAlertTexts, speakAlert } from '@/lib/translations';
+import { type Language, translations } from '@/lib/translations';
+import { speak } from '@/voice/speech';
+
+/**
+ * Drill announcement.
+ *
+ * This used to speak the canned production tsunami alert verbatim, so running a
+ * drill made the application announce a real-sounding tsunami. A drill must
+ * identify itself as a drill, in every language, before anything else.
+ */
+const DRILL_ANNOUNCEMENT: Record<Language, string> = {
+  en: 'This is a practice drill, not a real emergency. The following steps are an evacuation exercise.',
+  hi: 'यह एक अभ्यास है, वास्तविक आपातकाल नहीं। नीचे दिए गए कदम एक निकासी अभ्यास हैं।',
+  mr: 'हा एक सराव नुसारा आहे, खरेखरा आपत्कालीन परिस्थिती नाही. पुढील पायऱ्या हा निर्वासन सराव आहेत.',
+  gu: 'આ એક અભ્યાસ છે, ખરેખરી કટોકટી નથી. નીચેના પગલાં એ સ્થળાંતર અભ્યાસ છે.',
+};
 
 interface MockDrillProps {
   language: Language;
@@ -19,7 +34,7 @@ export function MockDrill({ language }: MockDrillProps) {
     setStarted(true);
     setCurrentStep(0);
     setComplete(false);
-    speakAlert(voiceAlertTexts[language].tsunami, language);
+    void speak(DRILL_ANNOUNCEMENT[language], { language });
   };
 
   const next = () => {

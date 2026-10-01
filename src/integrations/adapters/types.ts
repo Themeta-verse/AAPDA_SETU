@@ -86,6 +86,19 @@ export interface NormalizedMarine {
   wavePeriod: number | null;
   hourly: MarineHourlyPoint[];
 
+  /**
+   * Additional sea-state variables published in the marine `current` block.
+   *
+   * These were previously read from an untyped side-channel that the URL never
+   * actually requested, so they were permanently null while the provenance
+   * panel claimed they were in use. They are now part of the normalized model
+   * and are requested explicitly.
+   */
+  swellHeight: number | null;
+  swellDirection: number | null;
+  oceanCurrentVelocity: number | null;
+  seaSurfaceTemperature: number | null;
+
   // Atmosphere — Open-Meteo Forecast.
   windSpeed: number | null;
   windDirection: number | null;
@@ -206,7 +219,17 @@ export type WarningAccessBlocker =
   /** Reachable and CORS-permitted, but the body is HTML with no parseable data. */
   | 'no-machine-readable-feed'
   /** The endpoint requires a credential or service-role call we do not hold. */
-  | 'requires-authentication';
+  | 'requires-authentication'
+  /**
+   * Retrieved server-side, reachable, HTTP 200 — but the published body
+   * contained no bulletin. This is the measured state of IMD and INCOIS as of
+   * 2026-09-30: the pages serve navigation chrome only.
+   */
+  | 'no-bulletin-content'
+  /** The upstream could not be contacted at all, or timed out. */
+  | 'network-error'
+  /** The server-side retriever itself could not be reached. */
+  | 'unreachable';
 
 /** The official agencies whose bulletins this platform would consume. */
 export type OfficialWarningAuthority = 'IMD' | 'INCOIS' | 'USGS';
@@ -252,6 +275,29 @@ export interface OfficialWarningStatus {
   httpStatus: number | null;
   /** Response content type observed, used to justify `no-machine-readable-feed`. */
   contentType: string | null;
+  /**
+   * Evidence backing the blocker.
+   *
+   * Present so the diagnosis is falsifiable: a reader can check what was
+   * actually returned instead of trusting a claim that the source is
+   * unreadable.
+   */
+  diagnostics?: {
+    finalUrl: string | null;
+    bytes: number;
+    visibleChars: number;
+    /** Which bulletin markers were found. Empty means none matched. */
+    markersFound: string[];
+    /** True when the body was navigation chrome only. */
+    looksLikeNavigationOnly: boolean;
+  };
+  /**
+   * Whether this product's geography covers the monitored Mumbai point.
+   *
+   * A clear bulletin for an unrelated region is not reassurance about Juhu, so
+   * scope must be carried explicitly rather than assumed.
+   */
+  relevantToMumbai?: boolean;
 }
 
 /**

@@ -35,11 +35,13 @@ export interface CoastalRiskTransition {
 /**
  * An entry in the BayWatch event stream.
  *
- * Every event corresponds to a real system action. There is no code path that
- * creates an event without something having actually happened.
+ * Every event corresponds to a real system action — a state transition, a user
+ * action, or a real data arrival. There is no code path that creates an event
+ * because a component rendered, because a poll ran, or because a clock ticked.
+ * `src/events/transitions.ts` owns that guarantee for polled state.
  */
 export type BayWatchEventKind =
-  | 'source-updated'
+  | 'source-recovered'
   | 'source-failed'
   | 'source-unavailable'
   | 'earthquake-received'
@@ -47,10 +49,21 @@ export type BayWatchEventKind =
   | 'forecast-changed'
   | 'risk-changed'
   | 'official-warning-detected'
+  | 'official-warning-cleared'
+  | 'official-warning-unknown'
+  | 'tsunami-flag-set'
+  | 'tsunami-flag-cleared'
   | 'notification-generated'
   | 'notification-acknowledged'
   | 'voice-generated'
   | 'voice-failed'
+  | 'manual-refresh'
+  | 'gps-granted'
+  | 'gps-denied'
+  | 'gps-lost'
+  | 'destination-selected'
+  | 'route-calculated'
+  | 'route-failed'
   | 'went-offline'
   | 'came-online';
 

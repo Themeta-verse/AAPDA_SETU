@@ -1,12 +1,25 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, ChevronRight, Volume2, VolumeX, X, Waves, CloudRain, Zap, ShieldAlert } from 'lucide-react';
-import { type Language, translations, voiceAlertTexts, speakAlert, stopSpeaking } from '@/lib/translations';
+import { AlertTriangle, ChevronRight, Volume2, VolumeX, X, Waves, CloudRain, Zap, ShieldAlert, Wind } from 'lucide-react';
+import { type Language, translations } from '@/lib/translations';
 import { type AlertInfo, type AlertType } from '@/lib/monitoringData';
+import { speakVoiceScript, stopSpeech } from '@/voice/speech';
+import { buildVoiceScript } from '@/voice/alertCenter';
+import { useOptionalSharedCoastalIntelligence } from '@/hooks/CoastalIntelligenceProvider';
 
 interface AlertCardsSectionProps {
   alerts: AlertInfo[];
   language: Language;
+  /**
+   * The exact current-state script, or null when no voice backend is usable.
+   *
+   * This component used to speak a canned per-alert string such as "Emergency.
+   * Tsunami risk alert... Evacuate immediately" regardless of whether any
+   * tsunami existed — tapping an inactive tsunami card announced an evacuation.
+   * The spoken text is now supplied by the caller from real application state,
+   * so this section can only ever read what is actually true.
+   */
+  spokenSummary?: string | null;
 }
 
 const alertIcons: Record<AlertType, typeof Waves> = {
@@ -14,26 +27,60 @@ const alertIcons: Record<AlertType, typeof Waves> = {
   tsunami: Zap,
   flood: CloudRain,
   rain: CloudRain,
+  storm: Wind,
 };
 
-export function AlertCardsSection({ alerts, language }: AlertCardsSectionProps) {
+export function AlertCardsSection({ alerts, language, spokenSummary = null }: AlertCardsSectionProps) {
   const t = translations[language];
   const [selectedAlert, setSelectedAlert] = useState<AlertInfo | null>(null);
   const [speaking, setSpeaking] = useState(false);
 
   const activeAlerts = alerts.filter(a => a.active);
 
-  const handleSpeak = (alertType: string) => {
+  /**
+   * Read the CURRENT situation aloud, from the canonical state-derived script.
+   *
+   * No canned text is generated here. The script is built from the single
+   * shared pipeline (same generator the Voice Alert Center uses), in the
+   * current UI language, and played through the single speech engine — which
+   * files the voice event on the shared stream. An explicit `spokenSummary`
+   * prop still overrides, for callers that already hold a script.
+   *
+   * When no script is available the control is not rendered at all rather than
+   * becoming a button that does nothing.
+   */
+  const shared = useOptionalSharedCoastalIntelligence();
+  const canonicalScript = useMemo(
+    () =>
+      shared
+        ? buildVoiceScript({
+            features: shared.features,
+            assessment: shared.assessment,
+            officialWarnings: shared.officialWarnings,
+            retrievedAt: shared.assessment.evaluatedAt,
+            language,
+          }).text
+        : null,
+    [shared, language]
+  );
+  const effectiveSummary = spokenSummary ?? canonicalScript;
+
+  const handleSpeak = async () => {
+    if (!effectiveSummary) return;
     if (speaking) {
-      stopSpeaking();
+      stopSpeech();
       setSpeaking(false);
       return;
     }
-    const text = voiceAlertTexts[language][alertType];
-    if (text) {
-      setSpeaking(true);
-      speakAlert(text, language, () => setSpeaking(false));
-    }
+    setSpeaking(true);
+    const result = await speakVoiceScript(effectiveSummary, {
+      language,
+      onEnd: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+    });
+    // A failure or an unavailable backend leaves nothing audible: reset the
+    // toggle rather than stranding it on "stop".
+    if (result.kind !== 'playing') setSpeaking(false);
   };
 
   const guidanceSteps = [t.step1, t.step2, t.step3, t.step4, t.step5];
@@ -138,7 +185,7 @@ export function AlertCardsSection({ alerts, language }: AlertCardsSectionProps) 
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/85 backdrop-blur-md"
-            onClick={() => { setSelectedAlert(null); stopSpeaking(); setSpeaking(false); }}
+            onClick={() => { setSelectedAlert(null); stopSpeech(); setSpeaking(false); }}
             role="dialog"
             aria-modal="true"
             aria-label="Alert details"
@@ -161,7 +208,7 @@ export function AlertCardsSection({ alerts, language }: AlertCardsSectionProps) 
                   <h3 className="text-xl font-black text-foreground">{t[selectedAlert.titleKey]}</h3>
                 </div>
                 <button
-                  onClick={() => { setSelectedAlert(null); stopSpeaking(); setSpeaking(false); }}
+                  onClick={() => { setSelectedAlert(null); stopSpeech(); setSpeaking(false); }}
                   className="p-1.5 rounded-lg hover:bg-secondary"
                   aria-label="Close alert details"
                 >
@@ -186,17 +233,20 @@ export function AlertCardsSection({ alerts, language }: AlertCardsSectionProps) 
                 ))}
               </ol>
 
-              <button
-                onClick={() => handleSpeak(selectedAlert.type)}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider transition-colors ${
-                  speaking
-                    ? 'bg-danger/20 text-danger hover:bg-danger/30 border border-danger/30'
-                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                }`}
-              >
-                {speaking ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                {speaking ? t.stopVoiceAlert : t.playVoiceAlert}
-              </button>
+              {effectiveSummary && (
+                <button
+                  onClick={handleSpeak}
+                  aria-label={speaking ? 'Stop reading the current situation' : 'Read the current situation aloud'}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider transition-colors ${
+                    speaking
+                      ? 'bg-danger/20 text-danger hover:bg-danger/30 border border-danger/30'
+                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  }`}
+                >
+                  {speaking ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                  {speaking ? t.stopVoiceAlert : 'Read current situation'}
+                </button>
+              )}
             </motion.div>
           </motion.div>
         )}

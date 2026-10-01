@@ -24,6 +24,13 @@ export interface EarthquakeState {
   feedGeneratedAt: string | null;
   source: NormalizedEarthquakeFeed['source'];
   totalInFeed: number;
+  /**
+   * Records discarded by validation in the last read.
+   *
+   * Surfaced so the UI can state that N malformed rows were excluded rather
+   * than silently showing a shorter list as if the feed were complete.
+   */
+  rejectedCount: number;
   error: NormalizedEarthquakeFeed['error'];
   refetch: () => void;
 }
@@ -60,6 +67,7 @@ export function useEarthquakeData(intervalMs = 300000): EarthquakeState {
     feedGeneratedAt: feed.feedGeneratedAt,
     source: feed.source,
     totalInFeed: feed.totalInFeed,
+    rejectedCount: feed.rejectedCount,
     error: feed.error,
     refetch: fetchData,
   };

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertOctagon,
@@ -15,11 +15,21 @@ import {
   BellOff,
   History,
   Waves,
+  TrendingUp,
 } from 'lucide-react';
+import { describeOutlook } from '@/risk/outlook';
 import type { Language } from '@/lib/translations';
-import { useCoastalIntelligence, type CoastalIntelligenceState } from '@/hooks/useCoastalIntelligence';
-import { buildVoiceScript, generateVoiceAlert, readVoiceConfig, type VoiceState } from '@/voice/alertCenter';
+import { useSharedCoastalIntelligence } from '@/hooks/CoastalIntelligenceProvider';
+import { type CoastalIntelligenceState } from '@/hooks/useCoastalIntelligence';
+import { buildVoiceScript } from '@/voice/alertCenter';
+import { speakVoiceScript, stopSpeech, type SpeechResult } from '@/voice/speech';
 import type { ForecastPoint } from '@/integrations/adapters/hazardFeatures';
+import { FORECAST_HORIZON_HOURS } from '@/integrations/adapters/openMeteoForecast';
+import {
+  formatForecastHourLabel,
+  formatForecastTimestamp,
+  formatInstantInSourceTimezone,
+} from '@/lib/sourceTime';
 import type { CoastalRiskState } from '@/risk/engine';
 import type { SourceStatus } from '@/integrations/adapters/types';
 
@@ -110,25 +120,39 @@ const SEVERITY_STYLE = {
   critical: 'border-danger/50 text-danger',
 } as const;
 
-const EVENT_LABEL: Record<string, string> = {
-  'source-updated': 'Source updated',
+export const EVENT_LABEL: Record<string, string> = {
   'source-failed': 'Source failed',
+  'source-recovered': 'Source recovered',
   'source-unavailable': 'Source unavailable',
   'earthquake-received': 'Earthquake received',
   'incident-received': 'Incident received',
   'forecast-changed': 'Forecast changed',
   'risk-changed': 'Risk changed',
   'official-warning-detected': 'Official warning',
+  'official-warning-cleared': 'Warning cleared',
+  'official-warning-unknown': 'Warning unknown',
+  'tsunami-flag-set': 'Tsunami flag',
+  'tsunami-flag-cleared': 'Tsunami flag cleared',
   'notification-generated': 'Notification',
   'notification-acknowledged': 'Acknowledged',
   'voice-generated': 'Voice',
   'voice-failed': 'Voice failed',
+  'manual-refresh': 'Manual refresh',
+  'gps-granted': 'Location acquired',
+  'gps-denied': 'Location denied',
+  'gps-lost': 'Location lost',
+  'destination-selected': 'Destination selected',
+  'route-calculated': 'Route calculated',
+  'route-failed': 'Route failed',
   'went-offline': 'Offline',
   'came-online': 'Online',
 };
 
 export function CoastalCommandCenter({ language }: CoastalCommandCenterProps) {
-  const state = useCoastalIntelligence({});
+  // Reads the single provider-owned pipeline. Calling useCoastalIntelligence()
+  // here directly would start a second independent polling loop and a second set
+  // of requests, which is what produced three identical USGS calls per page load.
+  const state = useSharedCoastalIntelligence();
 
   return (
     <section className="container py-8 space-y-8" aria-label="Coastal Command Center" data-testid="coastal-command-center">
@@ -136,10 +160,11 @@ export function CoastalCommandCenter({ language }: CoastalCommandCenterProps) {
       <CurrentCoastalState state={state} />
       <OfficialWarnings state={state} />
       <ForecastTimeline state={state} />
+      <OutlookPanel state={state} />
       <RiskDrivers state={state} />
       <RiskExplanationPanel state={state} />
       <DataQualityPanel state={state} />
-      <VoiceAlertCenter state={state} />
+      <VoiceAlertCenter state={state} language={language} />
       <NotificationCenter state={state} />
       <EventStream state={state} />
       <SourceProvenance state={state} />
@@ -165,7 +190,14 @@ function CommandCenterHeader({ state, language: _language }: { state: CoastalInt
         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors"
         data-testid="cc-refresh"
       >
-        <Loader2 className={`w-4 h-4 ${state.fetchState.marine.lastAttemptedFetch ? '' : 'animate-spin'}`} aria-hidden="true" />
+        {/* Driven by the store's REAL in-flight flag. The previous condition
+            (`lastAttemptedFetch`) was set on the very first cycle and never
+            cleared, so the spinner could only ever animate before the first
+            fetch completed and was dead for the entire session. */}
+        <Loader2
+          className={`w-4 h-4 ${state.isFetching ? 'animate-spin' : ''}`}
+          aria-hidden="true"
+        />
         Refresh sources
       </button>
     </div>
@@ -255,7 +287,7 @@ function CurrentCoastalState({ state }: { state: CoastalIntelligenceState }) {
         <div className="rounded-lg border border-border bg-background/30 px-3 py-2">
           <span className="text-muted-foreground">Evaluated</span>
           <p className="font-semibold text-foreground mt-0.5">
-            {new Date(assessment.evaluatedAt).toLocaleTimeString()}
+            {formatInstantInSourceTimezone(assessment.evaluatedAt)} IST
           </p>
         </div>
       </div>
@@ -279,11 +311,28 @@ function OfficialWarnings({ state }: { state: CoastalIntelligenceState }) {
       </p>
 
       <ul className="space-y-2" data-testid="cc-warning-list">
-        {state.officialWarnings.length === 0 && (
-          <li className="text-sm text-muted-foreground flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Probing official sources…
-          </li>
-        )}
+        {/*
+          An empty list is ambiguous: it could mean "not attempted yet" or
+          "attempted and the retriever was unreachable". Showing a spinner for
+          both left the panel reading "Probing official sources…" forever after a
+          failure, which looked like a hung request rather than an honest
+          inability to read the source. The attempt state disambiguates them.
+        */}
+        {state.officialWarnings.length === 0 &&
+          state.fetchState.warnings.lastAttemptedFetch === null && (
+            <li className="text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Probing official
+              sources…
+            </li>
+          )}
+
+        {state.officialWarnings.length === 0 &&
+          state.fetchState.warnings.lastAttemptedFetch !== null && (
+            <li className="text-sm text-warning" data-testid="cc-warning-unreachable">
+              {state.fetchState.warnings.errorMessage ??
+                'The official warning retriever did not return a result. IMD and INCOIS status is UNKNOWN. This is not an all-clear.'}
+            </li>
+          )}
 
         {state.officialWarnings.map((warning) => (
           <li
@@ -338,47 +387,91 @@ function OfficialWarnings({ state }: { state: CoastalIntelligenceState }) {
 function ForecastTimeline({ state }: { state: CoastalIntelligenceState }) {
   const [selected, setSelected] = useState<ForecastPoint | null>(null);
 
+  // Default the detail panel to the first real hour so the panel is useful
+  // immediately, and keep it pointed at a valid hour if the list refreshes.
+  const firstIso = state.forecast[0]?.isoTime ?? null;
+  useEffect(() => {
+    if (firstIso === null) {
+      setSelected(null);
+      return;
+    }
+    if (!selected || !state.forecast.some((p) => p.isoTime === selected.isoTime)) {
+      setSelected(state.forecast[0]);
+    }
+  }, [firstIso, state.forecast, selected]);
+
   return (
     <div className="glass-card rounded-2xl p-5 sm:p-6" data-testid="cc-forecast">
-      <h3 className="text-lg font-bold flex items-center gap-2 mb-1">
-        <Waves className="w-5 h-5 text-primary" aria-hidden="true" />
-        Forecast Timeline
-      </h3>
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <h3 className="text-lg font-bold flex items-center gap-2">
+          <Waves className="w-5 h-5 text-primary" aria-hidden="true" />
+          Forecast Timeline
+        </h3>
+        <span className="text-[10px] font-mono text-muted-foreground shrink-0" data-testid="cc-forecast-horizon">
+          {state.forecast.length} of {FORECAST_HORIZON_HOURS} hours published
+        </span>
+      </div>
       <p className="text-xs text-muted-foreground mb-4">
-        Only horizons published by the source are shown. Select a point to inspect its inputs.
+        {FORECAST_HORIZON_HOURS}-hour wave and weather forecast from Open-Meteo. Times are Indian
+        Standard Time as published by the source. Only hours the source actually published are
+        shown — select one to inspect its inputs.
       </p>
 
       {state.forecast.length === 0 ? (
-        <p className="text-sm text-muted-foreground" data-testid="cc-forecast-empty">
-          No forecast points have been published yet.
-        </p>
+        state.isFetching ? (
+          <p
+            className="text-sm text-muted-foreground flex items-center gap-2"
+            data-testid="cc-forecast-loading"
+            role="status"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+            Requesting forecast from Open-Meteo…
+          </p>
+        ) : (
+          <div data-testid="cc-forecast-empty">
+            <p className="text-sm text-muted-foreground">No forecast points have been published.</p>
+            {state.fetchState.marine.errorMessage && (
+              <p className="text-xs text-muted-foreground/80 mt-1 font-mono break-all">
+                {state.fetchState.marine.errorKind}: {state.fetchState.marine.errorMessage}
+              </p>
+            )}
+            {state.rateLimitedUntil && (
+              <p className="text-xs text-warning mt-1" data-testid="cc-forecast-ratelimited">
+                The source rate-limited this device (HTTP 429). The next request is held until{' '}
+                {formatInstantInSourceTimezone(state.rateLimitedUntil)}.
+              </p>
+            )}
+          </div>
+        )
       ) : (
         <>
           <div className="overflow-x-auto pb-2">
             <ul className="flex gap-2 min-w-max" data-testid="cc-forecast-list">
-              {state.forecast.slice(0, 24).map((point) => (
+              {state.forecast.map((point) => (
                 <li key={point.isoTime}>
                   <button
                     onClick={() => setSelected(point)}
                     aria-pressed={selected?.isoTime === point.isoTime}
                     className={`w-24 rounded-lg border px-2 py-2 text-left transition-colors ${
-                      point.hazardState === 'severe'
+                      point.hazardState === 'high'
                         ? 'border-danger/50 bg-danger/10'
-                        : point.hazardState === 'high'
+                        : point.hazardState === 'elevated'
                           ? 'border-warning/50 bg-warning/10'
-                          : point.hazardState === 'elevated'
-                            ? 'border-warning/30 bg-warning/5'
-                            : 'border-border bg-background/40 hover:bg-secondary/60'
+                          : 'border-border bg-background/40 hover:bg-secondary/60'
                     } ${selected?.isoTime === point.isoTime ? 'ring-2 ring-primary' : ''}`}
                     data-testid="cc-forecast-point"
                   >
                     <span className="block text-[11px] text-muted-foreground">
-                      {new Date(point.isoTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatForecastHourLabel(point.time)}
                     </span>
                     <span className="block text-sm font-semibold text-foreground mt-0.5">
                       {point.waveHeightM === null ? '—' : `${point.waveHeightM.toFixed(1)}m`}
                     </span>
-                    <span className="block text-[10px] text-muted-foreground">{point.hazardState}</span>
+                    <span className="block text-[10px] text-muted-foreground">
+                      {point.hazardState === 'insufficient-data'
+                        ? 'no data'
+                        : point.hazardState}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -388,7 +481,7 @@ function ForecastTimeline({ state }: { state: CoastalIntelligenceState }) {
           {selected && (
             <div className="mt-3 rounded-xl border border-primary/40 bg-primary/5 p-3" data-testid="cc-forecast-detail">
               <p className="text-xs font-semibold text-primary mb-2">
-                Forecast inputs for {new Date(selected.isoTime).toLocaleString()}
+                Forecast inputs for {formatForecastTimestamp(selected.time)} IST
               </p>
               <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 {[
@@ -415,9 +508,15 @@ function ForecastTimeline({ state }: { state: CoastalIntelligenceState }) {
                   </div>
                 ))}
               </dl>
-              {selected.ruleIds.length > 0 && (
+              {selected.ruleIds.length > 0 ? (
                 <p className="text-xs text-muted-foreground mt-2">
                   Rules at this hour: {selected.ruleIds.join(', ')}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selected.hazardState === 'insufficient-data'
+                    ? 'No rule inputs were published for this hour, so no hazard claim is made.'
+                    : 'No rule threshold was crossed at this hour.'}
                 </p>
               )}
               <p className="text-[10px] text-muted-foreground/70 mt-1">
@@ -608,7 +707,7 @@ function RiskExplanationPanel({ state }: { state: CoastalIntelligenceState }) {
                 <span className="font-mono text-foreground">
                   {t.previousState} → {t.newState}
                 </span>
-                <span className="ml-2">{new Date(t.at).toLocaleTimeString()}</span>
+                <span className="ml-2">{formatInstantInSourceTimezone(t.at)} IST</span>
                 {t.ruleIds.length > 0 && (
                   <span className="ml-2 font-mono text-[10px]">{t.ruleIds.join(', ')}</span>
                 )}
@@ -674,12 +773,12 @@ function DataQualityPanel({ state }: { state: CoastalIntelligenceState }) {
               <p className="text-foreground font-medium mt-0.5">{STATUS_LABEL[fetch.status]}</p>
               {fetch.lastSuccessfulFetch && (
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  Last ok: {new Date(fetch.lastSuccessfulFetch).toLocaleTimeString()}
+                  Last ok: {formatInstantInSourceTimezone(fetch.lastSuccessfulFetch)} IST
                 </p>
               )}
               {fetch.nextRefreshAt && (
                 <p className="text-[10px] text-muted-foreground">
-                  Next: {new Date(fetch.nextRefreshAt).toLocaleTimeString()}
+                  Next: {formatInstantInSourceTimezone(fetch.nextRefreshAt)} IST
                 </p>
               )}
             </div>
@@ -694,8 +793,16 @@ function DataQualityPanel({ state }: { state: CoastalIntelligenceState }) {
 // 7. Voice alert center
 // ---------------------------------------------------------------------
 
-function VoiceAlertCenter({ state }: { state: CoastalIntelligenceState }) {
-  const [voice, setVoice] = useState<VoiceState>({ kind: 'idle' });
+function VoiceAlertCenter({ state, language }: { state: CoastalIntelligenceState; language: Language }) {
+  // Playback state only. The spoken WORDS come from `buildVoiceScript` below,
+  // which is the single generator of alert text; audibility comes from the
+  // single speech engine (`speakVoiceScript`), which also files the
+  // voice-generated / voice-failed event. Nothing here invents content.
+  const [speech, setSpeech] = useState<'idle' | 'playing' | 'failed' | 'unavailable'>('idle');
+  const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  // Guards the await below: a stop issued while generation is in flight must
+  // not be overwritten by the stale result arriving afterwards.
+  const speechRunRef = useRef(0);
 
   const script = useMemo(
     () =>
@@ -704,18 +811,42 @@ function VoiceAlertCenter({ state }: { state: CoastalIntelligenceState }) {
         assessment: state.assessment,
         officialWarnings: state.officialWarnings,
         retrievedAt: state.assessment.evaluatedAt,
+        language,
       }),
-    [state.features, state.assessment, state.officialWarnings]
+    [state.features, state.assessment, state.officialWarnings, language]
   );
 
   const generate = async () => {
-    setVoice({ kind: 'loading' });
-    const config = readVoiceConfig();
-    const result = await generateVoiceAlert(script.text, {
-      supabaseUrl: config.supabaseUrl ?? undefined,
-      supabaseKey: config.supabaseKey ?? undefined,
+    if (speech === 'playing') {
+      speechRunRef.current += 1;
+      stopSpeech();
+      setSpeech('idle');
+      setSpeechMessage(null);
+      return;
+    }
+    const run = ++speechRunRef.current;
+    setSpeech('playing');
+    setSpeechMessage(null);
+    const result: SpeechResult = await speakVoiceScript(script.text, {
+      language,
+      onEnd: () => {
+        if (speechRunRef.current === run) {
+          setSpeech('idle');
+        }
+      },
     });
-    setVoice(result);
+    if (speechRunRef.current !== run) return;
+    if (result.kind === 'playing') {
+      setSpeechMessage(
+        `Playing via ${result.backend === 'elevenlabs' ? 'ElevenLabs' : 'browser speech'} (${language})`
+      );
+    } else if (result.kind === 'failed') {
+      setSpeech('failed');
+      setSpeechMessage(result.message);
+    } else {
+      setSpeech('unavailable');
+      setSpeechMessage(result.reason);
+    }
   };
 
   return (
@@ -725,7 +856,7 @@ function VoiceAlertCenter({ state }: { state: CoastalIntelligenceState }) {
         Voice Alert Center
       </h3>
       <p className="text-xs text-muted-foreground mb-3">
-        Spoken text is generated from current application state only.
+        Spoken text is generated from current application state only, in the selected language ({language}).
       </p>
 
       <p
@@ -744,21 +875,20 @@ function VoiceAlertCenter({ state }: { state: CoastalIntelligenceState }) {
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={generate}
-          disabled={voice.kind === 'loading'}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
           data-testid="cc-voice-generate"
         >
-          {voice.kind === 'loading' ? (
+          {speech === 'playing' && !speechMessage ? (
             <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
           ) : (
             <Volume2 className="w-4 h-4" aria-hidden="true" />
           )}
-          {voice.kind === 'loading' ? 'Generating…' : 'Generate voice alert'}
+          {speech === 'playing' && speechMessage ? 'Stop' : speech === 'playing' ? 'Generating…' : 'Generate voice alert'}
         </button>
 
-        {voice.kind === 'error' && (
+        {speech === 'failed' && (
           <>
-            <span className="text-xs text-danger" data-testid="cc-voice-error">{voice.message}</span>
+            <span className="text-xs text-danger" data-testid="cc-voice-error">{speechMessage}</span>
             <button
               onClick={generate}
               className="text-xs underline text-primary"
@@ -769,18 +899,15 @@ function VoiceAlertCenter({ state }: { state: CoastalIntelligenceState }) {
           </>
         )}
 
-        {voice.kind === 'unavailable' && (
+        {speech === 'unavailable' && (
           <span className="text-xs text-muted-foreground" data-testid="cc-voice-unavailable-reason">
-            {voice.reason}
+            {speechMessage}
           </span>
         )}
 
-        {voice.kind === 'ready' && (
+        {speech === 'playing' && speechMessage && (
           <span className="text-xs text-safe" data-testid="cc-voice-ready">
-            Played via {voice.source === 'elevenlabs' ? 'ElevenLabs' : 'browser speech'}
-            {voice.kind === 'ready' && voice.url ? (
-              <audio controls src={voice.url} className="ml-2 h-8 align-middle" />
-            ) : null}
+            {speechMessage}
           </span>
         )}
       </div>
@@ -869,7 +996,7 @@ function NotificationCenter({ state }: { state: CoastalIntelligenceState }) {
                   <p className="text-xs text-muted-foreground mt-0.5">{notification.detail}</p>
                   <p className="text-[10px] text-muted-foreground/80 mt-1">
                     <span className="font-mono">{notification.rule}</span> · {notification.source} ·{' '}
-                    {new Date(notification.createdAt).toLocaleString()}
+                    {formatInstantInSourceTimezone(notification.createdAt)} IST
                   </p>
                 </div>
                 {notification.acknowledgedAt === null ? (
@@ -882,7 +1009,7 @@ function NotificationCenter({ state }: { state: CoastalIntelligenceState }) {
                   </button>
                 ) : (
                   <span className="shrink-0 text-[10px] text-muted-foreground">
-                    Ack {new Date(notification.acknowledgedAt).toLocaleTimeString()}
+                    Ack {formatInstantInSourceTimezone(notification.acknowledgedAt)} IST
                   </span>
                 )}
               </div>
@@ -916,7 +1043,7 @@ function EventStream({ state }: { state: CoastalIntelligenceState }) {
           {state.events.slice(0, 60).map((event) => (
             <li key={event.id} className="text-xs flex items-start gap-2">
               <span className="text-muted-foreground tabular-nums shrink-0 w-16">
-                {new Date(event.at).toLocaleTimeString()}
+                {formatInstantInSourceTimezone(event.at)}
               </span>
               <span className="font-medium text-foreground shrink-0">
                 {EVENT_LABEL[event.kind] ?? event.kind}
@@ -941,82 +1068,338 @@ function EventStream({ state }: { state: CoastalIntelligenceState }) {
   );
 }
 
+
 // ---------------------------------------------------------------------
-// 10. Source provenance
+// Derived outlook
 // ---------------------------------------------------------------------
 
-function SourceProvenance({ state }: { state: CoastalIntelligenceState }) {
+/**
+ * The transparent 48-hour projection.
+ *
+ * Deliberately labelled as a rule-based derivation rather than a prediction.
+ * It applies the same thresholds as the headline verdict to each published
+ * forecast hour, and every claim it makes is traceable to named rules and the
+ * values that fired them. `coverage` is stated up front, because an outlook
+ * drawn from half a horizon is a weaker claim than one drawn from all of it.
+ */
+function OutlookPanel({ state }: { state: CoastalIntelligenceState }) {
+  const outlook = state.outlook;
+  const summary = describeOutlook(outlook);
+
+  const trendLabel: Record<string, string> = {
+    worsening: 'Worsening',
+    improving: 'Improving',
+    stable: 'Steady',
+    unknown: 'Trend unknown',
+  };
+
+  const peakLabel: Record<string, string> = {
+    nominal: 'Nominal',
+    elevated: 'Elevated',
+    high: 'High',
+  };
+
   return (
-    <div className="glass-card rounded-2xl p-5 sm:p-6" data-testid="cc-provenance">
-      <h3 className="text-lg font-bold flex items-center gap-2 mb-1">
-        <Database className="w-5 h-5 text-primary" aria-hidden="true" />
-        Source Provenance
-      </h3>
-      <p className="text-xs text-muted-foreground mb-3">
-        What each value is, when it was issued, when it was retrieved, and what it cannot tell you.
+    <div className="glass-card rounded-2xl p-5 sm:p-6" data-testid="cc-outlook">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <h3 className="text-lg font-bold flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-primary" aria-hidden="true" />
+          48-hour outlook
+        </h3>
+        <span className="text-[10px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
+          Rule-based derivation
+        </span>
+      </div>
+
+      <p className="text-xs text-muted-foreground mb-3" data-testid="cc-outlook-summary">
+        {summary}
       </p>
 
-      <ul className="space-y-2" data-testid="cc-provenance-list">
-        {state.provenance.map((entry) => (
-          <li
-            key={`${entry.sourceId}-${entry.url}`}
-            className="rounded-xl border border-border bg-background/40 p-3"
-            data-testid="cc-provenance-item"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium text-sm text-foreground">{entry.sourceName}</span>
-              <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-                {STATUS_LABEL[entry.status]}
-              </span>
-            </div>
-
-            <a
-              href={entry.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
-            >
-              {entry.url.slice(0, 70)}{entry.url.length > 70 ? '…' : ''}
-              <ExternalLink className="w-3 h-3" aria-hidden="true" />
-            </a>
-
-            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] mt-2">
-              <div>
-                <dt className="text-muted-foreground">Issued</dt>
-                <dd className="text-foreground">{entry.issuedAt ?? 'Not published'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Valid from</dt>
-                <dd className="text-foreground">{entry.validFrom ?? 'Not published'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Valid until</dt>
-                <dd className="text-foreground">{entry.validUntil ?? 'Not published'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Retrieved</dt>
-                <dd className="text-foreground">
-                  {entry.retrievedAt ? new Date(entry.retrievedAt).toLocaleTimeString() : 'Never'}
-                </dd>
-              </div>
-            </dl>
-
-            {entry.fieldsUsed.length > 0 && (
-              <p className="text-[11px] text-muted-foreground mt-2">
-                Fields used: <span className="font-mono">{entry.fieldsUsed.join(', ')}</span>
+      {outlook.coverage === 'none' ? (
+        <p className="text-xs text-warning" data-testid="cc-outlook-unknown">
+          No outlook can be projected. This is not an indication of calm conditions.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div className="rounded-lg bg-secondary/50 p-2.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Peak</p>
+              <p className="text-sm font-bold" data-testid="cc-outlook-peak">
+                {outlook.peakState && peakLabel[outlook.peakState]
+                  ? peakLabel[outlook.peakState]
+                  : 'Unknown'}
               </p>
-            )}
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-2.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Trend</p>
+              <p className="text-sm font-bold" data-testid="cc-outlook-trend">
+                {trendLabel[outlook.trend]}
+              </p>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-2.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Peak hour</p>
+              <p className="text-sm font-bold">
+                {outlook.peakAt ? formatInstantInSourceTimezone(outlook.peakAt) : '—'}
+              </p>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-2.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Coverage</p>
+              <p className="text-sm font-bold" data-testid="cc-outlook-coverage">
+                {outlook.hoursAssessed}/{outlook.hoursExpected} h
+              </p>
+            </div>
+          </div>
 
-            {entry.limitations.length > 0 && (
-              <ul className="text-[11px] text-muted-foreground mt-1.5 space-y-0.5">
-                {entry.limitations.map((limitation) => (
-                  <li key={limitation}>• {limitation}</li>
+          {outlook.windows.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[11px] text-muted-foreground mb-1.5">
+                Elevated windows, worst first
+              </p>
+              <ul className="space-y-1.5" data-testid="cc-outlook-windows">
+                {outlook.windows.map((window) => (
+                  <li
+                    key={`${window.from}-${window.to}`}
+                    className="rounded-lg border border-border bg-background/40 p-2.5 text-[11px]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">
+                        {formatInstantInSourceTimezone(window.from)} →{' '}
+                        {formatInstantInSourceTimezone(window.to)}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {peakLabel[window.state] ?? window.state} · {window.hours} h
+                      </span>
+                    </div>
+                    {window.basis && (
+                      <p className="text-muted-foreground mt-1">
+                        {/*
+                          The cause is read from the rules that actually reached
+                          this hour's severity, not inferred from whichever value
+                          happened to be non-null. Guessing produced claims like
+                          "peak driven by wave height 0.56 m" on an hour whose
+                          real trigger was a visibility rule.
+                        */}
+                        Peak at {formatInstantInSourceTimezone(window.basis.at)} driven by{' '}
+                        {window.basis.triggers.length > 0
+                          ? window.basis.triggers
+                              .map(
+                                (trigger) =>
+                                  `${trigger.ruleId} (${trigger.observed
+                                    .map((value) => (value === null ? 'n/a' : String(value)))
+                                    .join(', ')})`,
+                              )
+                              .join('; ')
+                          : window.basis.ruleIds.join(', ') || 'published forecast values'}
+                      </p>
+                    )}
+                  </li>
                 ))}
               </ul>
-            )}
-          </li>
+            </div>
+          )}
+
+          <p className="text-[11px] text-muted-foreground">{outlook.coverageNote}</p>
+
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[11px] font-medium text-primary select-none">
+              What this outlook cannot tell you
+            </summary>
+            <ul className="mt-1.5 space-y-0.5">
+              {outlook.limitations.map((limitation) => (
+                <li key={limitation} className="text-[11px] text-muted-foreground">
+                  • {limitation}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// 10. Data availability + provenance
+//
+// WHY THIS IS COMPACT
+// -------------------
+// Provenance was previously rendered as a full-height stack of expanded cards,
+// one per source, each showing four timestamps and a field list. On a laptop it
+// occupied more vertical space than the entire operational dashboard above it,
+// which inverted the priority: the app looked like a metadata browser.
+//
+// It is supporting information, so it now renders as:
+//
+//   1. a one-glance availability line per source, always visible, so a reader
+//      learns "IMD unreadable" in a second without expanding anything; and
+//   2. full issued/valid/retrieved/fields/limitations detail behind a native
+//      <details> toggle, collapsed by default.
+//
+// Nothing was deleted. Every field that was displayed before is still here,
+// reachable in one click.
+// ---------------------------------------------------------------------
+
+const PROVENANCE_GROUP: Record<string, string> = {
+  'open-meteo-marine': 'Weather & marine',
+  'open-meteo-weather': 'Weather & marine',
+  'usgs-earthquakes': 'Seismic',
+  'imd-marine-forecast': 'Official warnings',
+  'imd-sea-area-bulletin': 'Official warnings',
+  'incois-ocean-state': 'Official warnings',
+  'incois-tsunami': 'Official warnings',
+};
+
+const SOURCE_DOT: Record<string, string> = {
+  live: 'bg-safe',
+  stale: 'bg-warning',
+  unavailable: 'bg-muted-foreground',
+  offline: 'bg-muted-foreground',
+};
+
+function SourceProvenance({ state }: { state: CoastalIntelligenceState }) {
+  const entries = state.provenance;
+
+  const operational = entries.filter((e) => e.status === 'live').length;
+  const degraded = entries.filter((e) => e.status === 'stale').length;
+  const unavailable = entries.filter((e) => e.status === 'unavailable' || e.status === 'offline').length;
+
+  // Grouped for scanning, but only groups that actually exist are rendered.
+  const groups = new Map<string, typeof entries>();
+  for (const entry of entries) {
+    const key = PROVENANCE_GROUP[entry.sourceId] ?? 'Other';
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(entry);
+    else groups.set(key, [entry]);
+  }
+
+  return (
+    <div className="glass-card rounded-2xl p-4 sm:p-5" data-testid="cc-provenance">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Database className="w-4 h-4 text-primary" aria-hidden="true" />
+          Data sources &amp; provenance
+        </h3>
+        <p className="text-[11px] text-muted-foreground" data-testid="cc-provenance-summary">
+          {entries.length} sources · {operational} operational
+          {degraded > 0 ? ` · ${degraded} stale` : ''}
+          {unavailable > 0 ? ` · ${unavailable} unreadable` : ''}
+        </p>
+      </div>
+
+      {/* Availability at a glance — this is the part that must always be visible. */}
+      <div className="space-y-2.5 mb-3">
+        {[...groups.entries()].map(([group, items]) => (
+          <div key={group}>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              {group}
+            </p>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {items.map((entry) => (
+                <li key={`${entry.sourceId}-${entry.url}`} className="flex items-center gap-1.5">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      SOURCE_DOT[entry.status] ?? 'bg-muted-foreground'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="text-[11px] text-foreground">{entry.sourceName}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {STATUS_LABEL[entry.status]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
+
+      {unavailable > 0 && (
+        <p className="text-[11px] text-warning mb-3">
+          {unavailable} source{unavailable === 1 ? '' : 's'} could not be read. Values that depend
+          on {unavailable === 1 ? 'it' : 'them'} are shown as unknown, not as safe. Expand a source
+          below for the exact reason.
+        </p>
+      )}
+
+      <details className="group" data-testid="cc-provenance-details">
+        <summary className="cursor-pointer text-xs font-medium text-primary select-none">
+          Show full provenance
+        </summary>
+
+        <ul className="space-y-2 mt-3" data-testid="cc-provenance-list">
+          {entries.map((entry) => (
+            <li
+              key={`${entry.sourceId}-${entry.url}`}
+              className="rounded-xl border border-border bg-background/40"
+              data-testid="cc-provenance-item"
+            >
+              <details>
+                <summary className="flex flex-wrap items-center justify-between gap-2 p-3 cursor-pointer select-none">
+                  <span className="font-medium text-xs text-foreground">{entry.sourceName}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
+                    {STATUS_LABEL[entry.status]}
+                  </span>
+                </summary>
+
+                <div className="px-3 pb-3">
+                  <a
+                    href={entry.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline break-all"
+                  >
+                    {entry.url}
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+                  </a>
+
+                  <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] mt-2">
+                    <div>
+                      <dt className="text-muted-foreground">Issued</dt>
+                      <dd className="text-foreground">
+                        {entry.issuedAt ? formatInstantInSourceTimezone(entry.issuedAt) : 'Not published'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Valid from</dt>
+                      <dd className="text-foreground">
+                        {entry.validFrom ? formatInstantInSourceTimezone(entry.validFrom) : 'Not published'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Valid until</dt>
+                      <dd className="text-foreground">
+                        {entry.validUntil ? formatInstantInSourceTimezone(entry.validUntil) : 'Not published'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Retrieved</dt>
+                      <dd className="text-foreground">
+                        {entry.retrievedAt
+                          ? `${formatInstantInSourceTimezone(entry.retrievedAt)} IST`
+                          : 'Never'}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {entry.fieldsUsed.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      Fields used: <span className="font-mono break-all">{entry.fieldsUsed.join(', ')}</span>
+                    </p>
+                  )}
+
+                  {entry.limitations.length > 0 && (
+                    <ul className="text-[11px] text-muted-foreground mt-1.5 space-y-0.5">
+                      {entry.limitations.map((limitation) => (
+                        <li key={limitation}>• {limitation}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </details>
+            </li>
+          ))}
+        </ul>
+      </details>
     </div>
   );
 }

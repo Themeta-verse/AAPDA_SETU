@@ -230,7 +230,11 @@ export async function fetchEarthquakeFeed(
   options: { window?: UsgsFeedWindow; regionOnly?: boolean } = {},
   deps: AdapterDeps = {}
 ): Promise<NormalizedEarthquakeFeed> {
-  const { window: feedWindow = 'day', regionOnly = true } = options;
+  // Default must be a filename USGS actually publishes. This previously
+  // defaulted to `'day'`, which is not a member of `UsgsFeedWindow` and would
+  // have produced `.../day.geojson` — a 404 — for any caller that relied on the
+  // default. Existing callers passed `'all_day'` explicitly, which hid it.
+  const { window: feedWindow = 'all_day', regionOnly = true } = options;
   const {
     fetchImpl = globalThis.fetch,
     now = () => new Date(),

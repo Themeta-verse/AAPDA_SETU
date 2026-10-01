@@ -89,6 +89,19 @@ export function emptyHazardFeatures(): HazardFeatures {
 // =====================================================================
 
 /**
+ * Everything a rule is allowed to read.
+ *
+ * Marine and weather rules read `HazardFeatures`. Seismic rules read
+ * `SeismicFeatures`, which arrives from a different source (the USGS feed) and
+ * is merged in before evaluation. Declaring the union here rather than casting
+ * at the call site is what makes it a compile error to write a rule against a
+ * field that does not exist — the previous signature declared only
+ * `HazardFeatures`, so the seismic rules silently referenced `seismicMagnitude`
+ * and `seismicDepthKm` on a type that had neither.
+ */
+export type RiskRuleInput = HazardFeatures & SeismicFeatures;
+
+/**
  * A rule is a named, versioned threshold check.
  *
  * `id` is persisted in risk-transition records, so it must remain stable. If a
@@ -112,9 +125,9 @@ export interface RiskRule {
    */
   severity: Exclude<RiskDimensionState, 'insufficient-data'>;
   /** Returns true when this rule's condition is met. */
-  test(features: HazardFeatures): boolean;
+  test(features: RiskRuleInput): boolean;
   /** The feature values the rule inspected, for the explanation. */
-  inputsOf(features: HazardFeatures): (string | number | null)[];
+  inputsOf(features: RiskRuleInput): (string | number | null)[];
 }
 
 type RiskDimensionState = 'nominal' | 'elevated' | 'high' | 'severe' | 'insufficient-data';
@@ -331,7 +344,7 @@ function evaluateDimension(
   id: RiskDimensionId,
   label: string,
   rules: readonly RiskRule[],
-  features: HazardFeatures,
+  features: RiskRuleInput,
   requiredFields: (keyof HazardFeatures)[],
   sourceStatus: SourceStatus,
   retrievedAt: string | null
@@ -405,11 +418,21 @@ export function evaluateRiskDimensions(
 ): Record<RiskDimensionId, RiskDimension> {
   const { features, seismic, officialWarnings } = input;
 
+  /**
+   * Single merged view handed to every rule table.
+   *
+   * Marine and weather rules only read marine/weather fields; seismic rules only
+   * read seismic fields. Merging once here means no rule can accidentally read
+   * a field from the wrong source, and the rule signature can stay a single
+   * honest type instead of being cast at each call site.
+   */
+  const combined: RiskRuleInput = { ...features, ...seismic };
+
   const marine = evaluateDimension(
     'marine',
     'Marine risk',
     MARINE_RULES,
-    features,
+    combined,
     ['waveHeightM', 'wavePeriodS'],
     features.marineStatus,
     features.marineFetchedAt
@@ -419,7 +442,7 @@ export function evaluateRiskDimensions(
     'weather',
     'Weather risk',
     WEATHER_RULES,
-    features,
+    combined,
     ['windSpeedKmh', 'precipitationMm'],
     features.weatherStatus,
     features.weatherFetchedAt
@@ -452,17 +475,15 @@ export function evaluateRiskDimensions(
         triggered: [],
         missingInputs: [
           'sea level forecast (no publicly readable endpoint)',
-          'tide height (no publicly readable endpoint)',
+          'wave setup / surge (no publicly readable endpoint)',
           'storm surge advisory (not readable from browser)',
         ],
         sourceStatus: 'unavailable',
         retrievedAt: null,
       };
 
-  // Seismic rules read from the seismic feature set. They are merged into a
-  // view that carries BOTH sets so the same `RiskRule` signature works, but
-  // the seismic fields come from `seismic`, never from marine `features`.
-  const combined = { ...features, ...seismic } as HazardFeatures & SeismicFeatures;
+  // Seismic rules read from the seismic feature set, via the merged view built
+  // above. The seismic values come from `seismic`, never from marine `features`.
 
   const seismicMissing: string[] = [];
   if (combined.seismicMagnitude === null) seismicMissing.push('event magnitude');
@@ -525,6 +546,14 @@ export interface RiskTransitionCandidate {
 export interface CoastalRiskAssessment {
   state: CoastalRiskState;
   dimensions: Record<RiskDimensionId, RiskDimension>;
+  /**
+   * Dimensions that could not be resolved because a required input was absent.
+   *
+   * A `nominal` state is only a verdict about the dimensions that DID resolve.
+   * The UI uses this list to state plainly which parts of the picture are
+   * unverified, so `nominal` is never displayed as blanket reassurance.
+   */
+  unresolvedDimensions: RiskDimensionId[];
   /** Official warning verdict. Null means UNKNOWN, never "no warning". */
   officialWarningActive: boolean | null;
   /**
@@ -538,14 +567,28 @@ export interface CoastalRiskAssessment {
   quality: DataQualityEvidence;
 }
 
+/**
+ * Combine the model dimensions into one state.
+ *
+ * A dimension that is `insufficient-data` does NOT contribute a level, and it
+ * does not block a level that the other dimensions genuinely reached. That was
+ * the previous behaviour: because `coastal-water` can never resolve (no readable
+ * sea-level or surge source exists), `nominal` was unreachable and the
+ * application reported `watch` even when every measured dimension was nominal —
+ * contradicting this file's own documented priority list.
+ *
+ * `unknown` is therefore returned only when NO dimension resolved at all, which
+ * is the honest "we have nothing" case.
+ */
 function worstState(
   dimensions: Record<RiskDimensionId, RiskDimension>
 ): CoastalRiskState {
+  const states = Object.values(dimensions).map((d) => d.state);
   // A severe dimension outranks everything from the model.
-  if (Object.values(dimensions).some((d) => d.state === 'severe')) return 'severe';
-  if (Object.values(dimensions).some((d) => d.state === 'high')) return 'high';
-  if (Object.values(dimensions).some((d) => d.state === 'elevated')) return 'elevated';
-  if (Object.values(dimensions).some((d) => d.state === 'nominal')) return 'watch';
+  if (states.includes('severe')) return 'severe';
+  if (states.includes('high')) return 'high';
+  if (states.includes('elevated')) return 'elevated';
+  if (states.includes('nominal')) return 'nominal';
   return 'unknown';
 }
 
@@ -556,8 +599,11 @@ function worstState(
  *   1. Official advisory active          -> severe  (human authority)
  *   2. Tsunami confirmed by a source     -> severe
  *   3. Any dimension severe/high/elevated -> that state
- *   4. All dimensions nominal            -> nominal
- *   5. Any dimension insufficient-data    -> unknown
+ *   4. At least one dimension nominal     -> nominal
+ *   5. No dimension resolved at all        -> unknown
+ *
+ * A dimension that is `insufficient-data` contributes no level. See
+ * `worstState` and the `unresolvedDimensions` field for why.
  */
 export function assessCoastalRisk(
   input: RiskAssessmentInput,
@@ -580,22 +626,147 @@ export function assessCoastalRisk(
 
   const tsunamiAuthoritative = incoisTsunamiAdvisory || seismic.tsunamiFlagAuthoritative;
 
-  let state: CoastalRiskState = worstState(dimensions);
+  const modelState = worstState(dimensions);
 
-  if (officialWarningActive === true || tsunamiStatus === true) {
-    state = 'severe';
-  } else if (state === 'unknown') {
-    state = 'unknown';
-  }
+  // An official advisory or a confirmed tsunami flag outranks every model
+  // verdict, because both require a human authority acting on information this
+  // application may not have.
+  const state: CoastalRiskState =
+    officialWarningActive === true || tsunamiStatus === true ? 'severe' : modelState;
+
+  // Dimensions that could not be resolved. A `nominal` state with unresolved
+  // dimensions is NOT an all-clear: the UI must show which dimensions are
+  // unverified rather than presenting a green verdict as complete coverage.
+  const unresolvedDimensions = (Object.values(dimensions) as RiskDimension[])
+    .filter((d) => d.state === 'insufficient-data')
+    .map((d) => d.id);
 
   return {
     state,
     dimensions,
+    unresolvedDimensions,
     officialWarningActive,
     tsunamiStatus,
     tsunamiAuthoritative,
     evaluatedAt: now().toISOString(),
     quality,
+  };
+}
+
+// =====================================================================
+// FORECAST TIMELINE EVALUATION
+// =====================================================================
+
+/**
+ * One hour's forecast values, as published by the source.
+ *
+ * Every field is nullable. A null means the source did not publish that
+ * variable for that hour, and it will never be treated as zero.
+ */
+export interface ForecastHourValues {
+  waveHeightM: number | null;
+  swellHeightM: number | null;
+  wavePeriodS: number | null;
+  windSpeedKmh: number | null;
+  windGustKmh: number | null;
+  precipitationMm: number | null;
+  precipitationProbabilityPct: number | null;
+  visibilityM: number | null;
+}
+
+export type ForecastHourState = 'nominal' | 'elevated' | 'high' | 'insufficient-data';
+
+export interface ForecastHourEvaluation {
+  state: ForecastHourState;
+  /** Ids of the rules that fired, in declaration order. */
+  ruleIds: string[];
+  /**
+   * The rules that actually drove this hour, with the values they inspected.
+   *
+   * Exposed so a UI can state WHY an hour was elevated instead of guessing.
+   * A previous version of the outlook panel always attributed a peak to wave
+   * height whenever one was present, which produced claims like "peak driven by
+   * wave height 0.56 m" on an hour whose actual trigger was
+   * `WEATHER.VISIBILITY.LOW` — a false attribution of the cause.
+   */
+  triggers: TriggeredRule[];
+}
+
+/**
+ * Evaluate ONE forecast hour against the SAME rule table the current-conditions
+ * assessment uses.
+ *
+ * This exists to make a class of bug structurally impossible. The forecast
+ * timeline previously carried its own hand-copied threshold table, which had
+ * already drifted out of sync with `MARINE_RULES`: `MARINE.WAVE.HIGH` was
+ * `severity: 'high'` in the engine but rendered as `severe` in the timeline,
+ * and `MARINE.PERIOD.LONG` was `elevated` in the engine and `high` in the
+ * timeline. The doc comment claimed the two could never disagree while the
+ * code guaranteed they did. Now there is exactly one rule table.
+ *
+ * `severe` is intentionally unreachable here — it is reserved for an official
+ * authority or a confirmed tsunami flag, which are not per-hour model outputs.
+ *
+ * Returns `insufficient-data` when NO rule input was published at all, so an
+ * empty hour is never presented as `nominal` (a calm-sea claim).
+ */
+export function evaluateForecastHour(values: ForecastHourValues): ForecastHourEvaluation {
+  const hasAnyInput =
+    values.waveHeightM !== null ||
+    values.wavePeriodS !== null ||
+    values.swellHeightM !== null ||
+    values.windSpeedKmh !== null ||
+    values.windGustKmh !== null ||
+    values.precipitationMm !== null ||
+    values.precipitationProbabilityPct !== null ||
+    values.visibilityM !== null;
+
+  if (!hasAnyInput) {
+    return { state: 'insufficient-data', ruleIds: [], triggers: [] };
+  }
+
+  const hourFeatures: RiskRuleInput = {
+    ...emptyHazardFeatures(),
+    waveHeightM: values.waveHeightM,
+    wavePeriodS: values.wavePeriodS,
+    swellHeightM: values.swellHeightM,
+    windSpeedKmh: values.windSpeedKmh,
+    windGustKmh: values.windGustKmh,
+    precipitationMm: values.precipitationMm,
+    precipitationProbabilityPct: values.precipitationProbabilityPct,
+    visibilityM: values.visibilityM,
+    // A forecast hour carries no seismic reading. Stating that explicitly keeps
+    // the seismic rules (which read `seismicMagnitude`) from ever firing on a
+    // forecast row, which would be reporting shaking for a time that has not
+    // happened yet.
+    ...emptySeismicFeatures(),
+  };
+
+  const fired = [...MARINE_RULES, ...WEATHER_RULES].filter((rule) => rule.test(hourFeatures));
+
+  // Take the highest severity that fired. `severe` is excluded by construction
+  // (no rule declares it) and guarded here so that adding one later cannot
+  // silently let a model hour escalate past an authority-only state.
+  const state = fired.reduce<Exclude<ForecastHourState, 'insufficient-data'>>(
+    (worst, rule) => {
+      if (rule.severity === 'severe') return worst;
+      return SEVERITY_ORDER[rule.severity] > SEVERITY_ORDER[worst] ? rule.severity : worst;
+    },
+    'nominal'
+  );
+
+  return {
+    state,
+    ruleIds: fired.map((rule) => rule.id),
+    // Only the rules that reached the reported severity, so the explanation
+    // names the actual cause rather than every rule that happened to fire.
+    triggers: fired
+      .filter((rule) => rule.severity === state)
+      .map((rule) => ({
+        ruleId: rule.id,
+        basis: rule.basis,
+        observed: rule.inputsOf(hourFeatures),
+      })),
   };
 }
 

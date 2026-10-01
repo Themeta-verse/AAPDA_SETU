@@ -285,7 +285,16 @@ export function buildRiskExplanation(args: {
  *   none active / an advisory IS active / we could not determine it.
  */
 function describeWarningSummary(warnings: readonly OfficialWarningStatus[]): string {
-  if (warnings.length === 0) return 'No official warning products are configured.';
+  if (warnings.length === 0) {
+    // An empty list no longer means "nothing is configured". The products are
+    // declared; an empty list means the retriever returned nothing, which is an
+    // inability to read the sources and must not be reported as a clean bill of
+    // health.
+    return (
+      'The official warning retriever returned no products, so IMD and INCOIS status is UNKNOWN. ' +
+      'This is not an all-clear.'
+    );
+  }
 
   const active = warnings.filter((w) => w.active === true);
   if (active.length > 0) {

@@ -1,88 +1,117 @@
-import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, X, Waves, Zap, CloudRain, Volume2, Timer, Siren } from 'lucide-react';
-import { type Language, translations, voiceAlertTexts, speakAlert, stopSpeaking } from '@/lib/translations';
-import { type ScenarioType } from '@/components/ScenarioSimulation';
-import { type RiskLevel } from '@/lib/monitoringData';
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertTriangle, X, Siren, Radio, MapPin } from 'lucide-react';
+import { type Language, translations } from '@/lib/translations';
+import { type RiskLevelOrUnknown } from '@/lib/monitoringData';
 
 interface EmergencyBroadcastBannerProps {
   language: Language;
-  riskLevel: RiskLevel;
-  activeScenario: ScenarioType;
+  /**
+   * Presentation tier of the canonical risk verdict, or `null` when no verdict
+   * could be reached. The banner must never treat `null` as a critical state.
+   */
+  riskLevel: RiskLevelOrUnknown;
+  /**
+   * True only when an official IMD or INCOIS bulletin was actually READ and
+   * reported an active warning. This is the single condition under which this
+   * application may use authority language such as "evacuation ordered".
+   */
+  officialWarningActive: boolean | null;
+  /** Short factual reason for the current state, from the risk engine. */
+  reason: string | null;
+  /** Where the monitoring point is. */
+  locationLabel: string;
 }
 
-const scenarioConfig: Record<string, { icon: typeof Waves; voiceKey: string; titleKey: string; descKey: string; countdown: number }> = {
-  highWave: { icon: Waves, voiceKey: 'highWave', titleKey: 'highWaveWarning', descKey: 'highWaveDesc', countdown: 900 },
-  tsunami: { icon: Zap, voiceKey: 'tsunami', titleKey: 'tsunamiRisk', descKey: 'tsunamiDesc', countdown: 600 },
-  flood: { icon: CloudRain, voiceKey: 'flood', titleKey: 'coastalFlood', descKey: 'coastalFloodDesc', countdown: 1200 },
+const LABELS: Record<Language, {
+  modelCritical: string;
+  officialWarning: string;
+  notAnOrder: string;
+  unverified: string;
+}> = {
+  en: {
+    modelCritical: 'HIGH-RISK COASTAL CONDITIONS',
+    officialWarning: 'OFFICIAL WARNING IN FORCE',
+    notAnOrder:
+      'This is a model-derived reading from published measurements. It is not an evacuation order. Follow NDMA and municipal instructions.',
+    unverified:
+      'Official IMD and INCOIS bulletins could not be read, so whether an authority has issued an advisory is unknown.',
+  },
+  hi: {
+    modelCritical: 'उच्च-जोखिम तटीय स्थितियां',
+    officialWarning: 'आधिकारिक चेतावनी लागू',
+    notAnOrder:
+      'यह प्रकाशित मापों से प्राप्त मॉडल-आधारित स्थिति है। यह निकासी आदेश नहीं है। एनडीएमए और नगरपालिका के निर्देशों का पालन करें।',
+    unverified:
+      'आधिकारिक IMD और INCOIS बुलेटिन पढ़े नहीं जा सके, इसलिए क्या कोई चेतावनी जारी है यह अज्ञात है।',
+  },
+  mr: {
+    modelCritical: 'उच्च-जोखीम किनारी परिस्थिती',
+    officialWarning: 'अधिकृत इशारा लागू',
+    notAnOrder:
+      'हे प्रकाशित मापांवरून मिळालेले मॉडेलवर आधारित नोंद आहे. हे निर्वासन आदेश नाही. एनडीएमए व नगरपालिकेच्या सूचनांचे पालन करा.',
+    unverified:
+      'अधिकृत IMD व INCOIS तपशील वाचता आले नाहीत, त्यामुळे इशारा जारी आहे का हे अज्ञात आहे.',
+  },
+  gu: {
+    modelCritical: 'ઉચ્ચ-જોખમ દરિયાકિનારી સ્થિતિ',
+    officialWarning: 'અધિકૃત ચેતવણી લાગુ',
+    notAnOrder:
+      'આ પ્રકાશિત માપદાંશોમાંથી મળેલી મોડેલ-આધારિત સ્થિતિ છે. આ સ્થળાંતર આદેશ નથી. NDMA અને નગરપાલિકાની સૂચનોનું પાલન કરો.',
+    unverified:
+      'અધિકૃત IMD અને INCOIS બુલેટિન વાંચી શકાયા નથી, તેથી ચેતવણી જારી છે કે નહીં તે અજાણ છે.',
+  },
 };
 
-const emergencyLabels: Record<Language, { emergency: string; evacuateIn: string; minutes: string; seconds: string; location: string }> = {
-  en: { emergency: 'EMERGENCY ALERT', evacuateIn: 'Evacuate within', minutes: 'min', seconds: 'sec', location: 'Location: Juhu Beach, Mumbai' },
-  hi: { emergency: 'आपातकालीन चेतावनी', evacuateIn: 'निकासी समय', minutes: 'मिनट', seconds: 'सेकंड', location: 'स्थान: जुहू बीच, मुंबई' },
-  mr: { emergency: 'आपत्कालीन सतर्कता', evacuateIn: 'निर्वासन वेळ', minutes: 'मिनिटे', seconds: 'सेकंद', location: 'स्थान: जुहू बीच, मुंबई' },
-  gu: { emergency: 'કટોકટી ચેતવણી', evacuateIn: 'ખાલી કરાવવાનો સમય', minutes: 'મિનિટ', seconds: 'સેકન્ડ', location: 'સ્થાન: જુહુ બીચ, મુંબઈ' },
-};
-
-export function EmergencyBroadcastBanner({ language, riskLevel, activeScenario }: EmergencyBroadcastBannerProps) {
+/**
+ * Top-of-page emergency banner.
+ *
+ * WHAT CHANGED AND WHY
+ * --------------------
+ * This banner previously:
+ *   - displayed "Evacuate within 15:00" on a countdown that counted down from a
+ *     hard-coded constant. No authority sets a deadline this application can
+ *     know about, so the countdown instructed people to evacuate on a timer the
+ *     app invented.
+ *   - auto-played canned speech ("Emergency. Tsunami risk alert... Evacuate
+ *     immediately") whenever it appeared, including when it appeared because a
+ *     TRAINING SCENARIO was selected.
+ *   - used the word "EMERGENCY ALERT" for a purely model-derived state.
+ *
+ * Now it:
+ *   - only distinguishes model-derived high risk from an authority-issued
+ *     warning, and says which one it is;
+ *   - states plainly that a model reading is not an evacuation order;
+ *   - states that official bulletins are unreadable when that is the case,
+ *     rather than implying an all-clear;
+ *   - never speaks by itself. Voice is a user action, in one place, driven by
+ *     the canonical generator.
+ */
+export function EmergencyBroadcastBanner({
+  language,
+  riskLevel,
+  officialWarningActive,
+  reason,
+  locationLabel,
+}: EmergencyBroadcastBannerProps) {
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const t = translations[language];
-  const el = emergencyLabels[language];
-  const [dismissed, setDismissed] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const voiceTriggeredRef = useRef<string | null>(null);
-  const prevScenarioRef = useRef<ScenarioType>(null);
+  const labels = LABELS[language];
 
-  const isActive = (activeScenario !== null || riskLevel === 'critical') && !dismissed;
-  const config = activeScenario ? scenarioConfig[activeScenario] : null;
+  const isOfficial = officialWarningActive === true;
+  const isCriticalModel = !isOfficial && riskLevel === 'critical';
 
-  // Reset dismissed state when scenario changes
-  useEffect(() => {
-    if (activeScenario !== prevScenarioRef.current) {
-      setDismissed(false);
-      prevScenarioRef.current = activeScenario;
-      if (activeScenario && config) {
-        setCountdown(config.countdown);
-      }
-    }
-  }, [activeScenario, config]);
+  if (!isOfficial && !isCriticalModel) return null;
 
-  // Countdown timer
-  useEffect(() => {
-    if (!isActive || countdown <= 0) return;
-    const id = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000);
-    return () => clearInterval(id);
-  }, [isActive, countdown]);
-
-  // Auto-trigger voice when banner appears
-  useEffect(() => {
-    if (isActive && activeScenario && voiceTriggeredRef.current !== activeScenario) {
-      voiceTriggeredRef.current = activeScenario;
-      const voiceKey = scenarioConfig[activeScenario]?.voiceKey;
-      if (voiceKey) {
-        const text = voiceAlertTexts[language][voiceKey];
-        if (text) speakAlert(text, language);
-      }
-    }
-    if (!isActive) {
-      voiceTriggeredRef.current = null;
-    }
-  }, [isActive, activeScenario, language]);
-
-  const handleDismiss = () => {
-    stopSpeaking();
-    setDismissed(true);
-  };
-
-  const minutes = Math.floor(countdown / 60);
-  const seconds = countdown % 60;
-
-  const Icon = config?.icon || AlertTriangle;
-
-  if (!isActive) return null;
+  // Dismissing is scoped to the condition that was dismissed, so a genuinely
+  // new and different alert is not silently suppressed by an old dismissal.
+  const conditionKey = isOfficial ? `official:${reason ?? 'warning'}` : `model:${riskLevel}`;
+  if (dismissedFor === conditionKey) return null;
 
   return (
     <AnimatePresence>
       <motion.div
+        key={conditionKey}
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: -100, opacity: 0 }}
@@ -91,75 +120,59 @@ export function EmergencyBroadcastBanner({ language, riskLevel, activeScenario }
         aria-live="assertive"
       >
         <div className="bg-gradient-to-r from-danger via-danger/95 to-danger border-b-2 border-warning/50 shadow-2xl shadow-danger/30">
-          {/* Flashing bar */}
           <div className="h-1 bg-warning animate-pulse" />
 
-          <div className="container py-3 sm:py-4">
-            <div className="flex items-start gap-3 sm:gap-4">
-              {/* Icon */}
-              <div className="flex-shrink-0 p-2 rounded-xl bg-white/10 animate-pulse">
-                <Siren className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+          <div className="container py-3">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 p-2 rounded-xl bg-white/10">
+                {isOfficial ? (
+                  <Radio className="w-6 h-6 text-white" />
+                ) : (
+                  <Siren className="w-6 h-6 text-white" />
+                )}
               </div>
 
-              {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <AlertTriangle className="w-4 h-4 text-warning animate-bounce" />
+                  <AlertTriangle className="w-4 h-4 text-warning" />
                   <span className="text-xs sm:text-sm font-black text-warning uppercase tracking-wider">
-                    ⚠ {el.emergency}
+                    {isOfficial ? labels.officialWarning : labels.modelCritical}
                   </span>
                 </div>
 
-                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  {config ? t[config.titleKey] : t.critical}
-                </h3>
+                {reason && (
+                  <p className="text-white text-sm font-bold">{reason}</p>
+                )}
 
-                <p className="text-white/80 text-xs sm:text-sm mt-1">
-                  {config ? t[config.descKey] : t.step1}
+                <p className="text-white/80 text-xs mt-1">
+                  {isOfficial ? (
+                    t.step1
+                  ) : (
+                    labels.notAnOrder
+                  )}
                 </p>
 
-                <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2">
-                  <span className="text-white/70 text-[11px] sm:text-xs">📍 {el.location}</span>
+                {!isOfficial && officialWarningActive === null && (
+                  <p className="text-warning/90 text-[11px] mt-1">{labels.unverified}</p>
+                )}
 
-                  {countdown > 0 && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
-                      <Timer className="w-3 h-3 text-warning" />
-                      <span className="text-xs font-bold font-mono text-white">
-                        {el.evacuateIn}: {String(minutes).padStart(2, '0')}{el.minutes} {String(seconds).padStart(2, '0')}{el.seconds}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-1 text-white/60">
-                    <Volume2 className="w-3 h-3 animate-pulse" />
-                    <span className="text-[10px]">🔊</span>
-                  </div>
+                <div className="flex flex-wrap items-center gap-3 mt-2">
+                  <span className="text-white/70 text-[11px] flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {locationLabel}
+                  </span>
                 </div>
               </div>
 
-              {/* Dismiss */}
               <button
-                onClick={handleDismiss}
+                onClick={() => setDismissedFor(conditionKey)}
                 className="flex-shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white/80 hover:text-white"
-                aria-label="Dismiss alert"
+                aria-label={t.close ?? 'Dismiss alert'}
               >
-                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+                <X className="w-4 h-5 h-5" />
               </button>
             </div>
           </div>
-
-          {/* Bottom progress bar */}
-          {countdown > 0 && config && (
-            <div className="h-1 bg-white/10">
-              <motion.div
-                className="h-full bg-warning"
-                initial={{ width: '100%' }}
-                animate={{ width: `${(countdown / config.countdown) * 100}%` }}
-                transition={{ duration: 1, ease: 'linear' }}
-              />
-            </div>
-          )}
         </div>
       </motion.div>
     </AnimatePresence>

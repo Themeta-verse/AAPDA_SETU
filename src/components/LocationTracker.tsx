@@ -1,147 +1,193 @@
 import { motion } from 'framer-motion';
-import { MapPin, Navigation, Compass, AlertTriangle, Locate } from 'lucide-react';
-import { type Language, translations } from '@/lib/translations';
-import { useGeolocation, JUHU_BEACH } from '@/hooks/useGeolocation';
-import { type RiskLevel } from '@/lib/monitoringData';
+import { Navigation, MapPin, Compass, Locate, Loader2, Info } from 'lucide-react';
+import { type Language } from '@/lib/translations';
+import { useGeolocation, MONITORED_POINT_LABEL } from '@/hooks/useGeolocation';
+import { formatDistance } from '@/lib/geo';
+
+/**
+ * Where you are, relative to the monitored coast.
+ *
+ * ===================================================================
+ * WHAT THIS COMPONENT NO LONGER CLAIMS
+ * ===================================================================
+ *
+ * The previous version of this component contained three fabrications:
+ *
+ * 1. A hardcoded "nearest safe zone" string, identical in all four languages,
+ *    reading "JVPD Maidan (1.2 km)". The 1.2 km was a literal in a translation
+ *    table. It was not measured, and it did not change with the user's position.
+ *
+ * 2. A safety verdict derived from distance alone. Under 1 km rendered
+ *    "Evacuate now", under 3 km "Exercise caution", beyond that "You are safe".
+ *    Distance from a beach is not a safety determination: a user 500 m inland
+ *    can be in worse danger than one on the sand during a cyclone surge, and
+ *    "you are safe" is not a conclusion this application is entitled to.
+ *
+ * 3. A compass direction computed toward two hardcoded numbers, 72.84 and 19.1,
+ *    which are not any destination's coordinates.
+ *
+ * What remains is the genuinely useful part: your real position, your real fix
+ * accuracy, and your real distance from the monitored beach point — stated as
+ * geography, not as a verdict. Routing and real destinations live in
+ * `EvacuationMap`, which queries OpenStreetMap and OSRM for them.
+ */
 
 interface LocationTrackerProps {
   language: Language;
-  riskLevel: RiskLevel;
+  riskLevel: string | null;
 }
 
-const locationLabels: Record<Language, {
-  title: string; yourLocation: string; distance: string; direction: string;
-  accuracy: string; requestLocation: string; moveInland: string; youAreSafe: string;
-  exerciseCaution: string; evacuateNow: string; nearestSafeZone: string;
+const LABELS: Record<Language, {
+  title: string;
+  yourLocation: string;
+  accuracy: string;
+  distance: string;
+  fromMonitored: string;
+  requestLocation: string;
+  locating: string;
+  noFixTitle: string;
 }> = {
   en: {
-    title: 'GPS Location & Distance', yourLocation: 'Your Location', distance: 'Distance from Juhu Beach',
-    direction: 'Recommended Direction', accuracy: 'Accuracy', requestLocation: 'Enable GPS Tracking',
-    moveInland: 'Move inland immediately', youAreSafe: 'You are at a safe distance',
-    exerciseCaution: 'Exercise caution — you are near the coast', evacuateNow: 'EVACUATE NOW — you are in the danger zone',
-    nearestSafeZone: 'Nearest Safe Zone: JVPD Ground (1.2 km inland)',
+    title: 'Your location',
+    yourLocation: 'Position',
+    accuracy: 'Accuracy',
+    distance: 'Distance from the coast',
+    fromMonitored: 'straight-line from ' + MONITORED_POINT_LABEL,
+    requestLocation: 'Use my location',
+    locating: 'Locating…',
+    noFixTitle: 'Location not shared',
   },
   hi: {
-    title: 'GPS स्थान और दूरी', yourLocation: 'आपका स्थान', distance: 'जुहू बीच से दूरी',
-    direction: 'अनुशंसित दिशा', accuracy: 'सटीकता', requestLocation: 'GPS ट्रैकिंग सक्षम करें',
-    moveInland: 'तुरंत अंतर्देशीय जाएं', youAreSafe: 'आप सुरक्षित दूरी पर हैं',
-    exerciseCaution: 'सावधानी बरतें — आप तट के पास हैं', evacuateNow: 'अभी निकासी करें — आप खतरे के क्षेत्र में हैं',
-    nearestSafeZone: 'निकटतम सुरक्षित क्षेत्र: JVPD मैदान (1.2 km)',
+    title: 'आपकी स्थिति',
+    yourLocation: 'स्थिति',
+    accuracy: 'सटीकता',
+    distance: 'तट से दूरी',
+    fromMonitored: MONITORED_POINT_LABEL + ' से सीधी दूरी',
+    requestLocation: 'मेरी स्थिति का उपयोग करें',
+    locating: 'स्थान खोजा जा रहा है…',
+    noFixTitle: 'स्थिति साझा नहीं की गई',
   },
   mr: {
-    title: 'GPS स्थान आणि अंतर', yourLocation: 'तुमचे स्थान', distance: 'जुहू बीचपासून अंतर',
-    direction: 'शिफारस केलेली दिशा', accuracy: 'अचूकता', requestLocation: 'GPS ट्रॅकिंग सुरू करा',
-    moveInland: 'ताबडतोब अंतर्देशीय जा', youAreSafe: 'तुम्ही सुरक्षित अंतरावर आहात',
-    exerciseCaution: 'सावधगिरी बाळगा — तुम्ही किनाऱ्याजवळ आहात', evacuateNow: 'आता निर्वासन करा — तुम्ही धोक्याच्या क्षेत्रात आहात',
-    nearestSafeZone: 'जवळचे सुरक्षित क्षेत्र: JVPD मैदान (1.2 km)',
+    title: 'तुमचे स्थान',
+    yourLocation: 'स्थान',
+    accuracy: 'अचूकता',
+    distance: 'किनाऱ्यापासून अंतर',
+    fromMonitored: MONITORED_POINT_LABEL + ' पासून थेट अंतर',
+    requestLocation: 'माझे स्थान वापरा',
+    locating: 'स्थान शोधत आहे…',
+    noFixTitle: 'स्थान शेअर केलेले नाही',
   },
   gu: {
-    title: 'GPS સ્થાન અને અંતર', yourLocation: 'તમારું સ્થાન', distance: 'જુહુ બીચથી અંતર',
-    direction: 'ભલામણ કરેલ દિશા', accuracy: 'ચોકસાઈ', requestLocation: 'GPS ટ્રેકિંગ સક્ષમ કરો',
-    moveInland: 'તરત અંદરની તરફ જાઓ', youAreSafe: 'તમે સુરક્ષિત અંતરે છો',
-    exerciseCaution: 'સાવધાની રાખો — તમે કિનારા પાસે છો', evacuateNow: 'હમણાં ખાલી કરો — તમે ખતરાના ઝોનમાં છો',
-    nearestSafeZone: 'નજીકનો સુરક્ષિત ઝોન: JVPD મેદાન (1.2 km)',
+    title: 'તમારું સ્થાન',
+    yourLocation: 'સ્થાન',
+    accuracy: 'ચોકસાઈ',
+    distance: 'કિનારાથી અંતર',
+    fromMonitored: MONITORED_POINT_LABEL + ' થી સીધું અંતર',
+    requestLocation: 'મારું સ્થાન વાપરો',
+    locating: 'સ્થાન શોધી રહ્યું છે…',
+    noFixTitle: 'સ્થાન શેર કર્યું નથી',
   },
 };
 
-export function LocationTracker({ language, riskLevel }: LocationTrackerProps) {
-  const ll = locationLabels[language];
-  const { position, error, loading, permissionGranted, requestLocation, distanceFromBeach, evacuationDirection } = useGeolocation();
+export function LocationTracker({ language }: LocationTrackerProps) {
+  const ll = LABELS[language];
+  const geo = useGeolocation();
 
-  const getDistanceStatus = () => {
-    if (!distanceFromBeach) return null;
-    if (distanceFromBeach < 1) return { text: ll.evacuateNow, color: 'text-danger', bg: 'bg-danger/10 border-danger/30' };
-    if (distanceFromBeach < 3) return { text: ll.exerciseCaution, color: 'text-warning', bg: 'bg-warning/10 border-warning/30' };
-    return { text: ll.youAreSafe, color: 'text-safe', bg: 'bg-safe/10 border-safe/30' };
-  };
-
-  const status = getDistanceStatus();
-
-  if (!permissionGranted) {
+  if (!geo.hasFix) {
     return (
-      <section className="container py-6">
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={requestLocation}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-3 p-4 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
-        >
-          <Locate className="w-5 h-5 text-primary" />
-          <span className="font-semibold text-sm">{ll.requestLocation}</span>
-        </motion.button>
+      <section className="container py-6" aria-label={ll.title}>
+        <div className="glass-card rounded-2xl p-5">
+          <div className="flex items-start gap-3">
+            <Locate className="w-5 h-5 text-primary shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="flex-1">
+              <h2 className="text-sm font-semibold mb-1">{ll.noFixTitle}</h2>
+              <p className="text-xs text-muted-foreground mb-3" data-testid="tracker-gps-message">
+                {geo.statusMessage}
+              </p>
+              <button
+                type="button"
+                onClick={geo.requestLocation}
+                disabled={geo.status === 'locating' || geo.status === 'unsupported'}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-60"
+                data-testid="tracker-request-location"
+              >
+                {geo.status === 'locating' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Locate className="w-4 h-4" aria-hidden="true" />
+                )}
+                {geo.status === 'locating' ? ll.locating : ll.requestLocation}
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
     );
   }
 
   return (
     <section className="container py-6" aria-label={ll.title}>
-      <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+      >
         <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-          <Navigation className="w-6 h-6 text-primary" />
+          <Navigation className="w-6 h-6 text-primary" aria-hidden="true" />
           {ll.title}
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Your location */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="glass-card p-4 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
-              <MapPin className="w-4 h-4 text-primary" />
+              <MapPin className="w-4 h-4 text-primary" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">{ll.yourLocation}</span>
             </div>
-            <p className="text-sm font-mono font-bold">
-              {position ? `${position.latitude.toFixed(4)}°N, ${position.longitude.toFixed(4)}°E` : '—'}
+            <p className="text-sm font-mono font-bold" data-testid="tracker-coords">
+              {geo.formatted}
             </p>
-            {position && (
-              <p className="text-[10px] text-muted-foreground mt-1">{ll.accuracy}: ±{Math.round(position.accuracy)}m</p>
+            {geo.accuracyLabel && (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {ll.accuracy}: {geo.accuracyLabel}
+              </p>
+            )}
+            {geo.isStale && (
+              <p className="text-[10px] text-warning mt-1">
+                This fix is {geo.ageSeconds}s old and may no longer be accurate.
+              </p>
             )}
           </div>
 
-          {/* Distance */}
           <div className="glass-card p-4 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
-              <Compass className="w-4 h-4 text-warning" />
+              <Compass className="w-4 h-4 text-primary" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">{ll.distance}</span>
             </div>
-            <p className={`text-2xl font-bold font-mono ${
-              distanceFromBeach && distanceFromBeach < 1 ? 'text-danger' :
-              distanceFromBeach && distanceFromBeach < 3 ? 'text-warning' : 'text-safe'
-            }`}>
-              {distanceFromBeach ? `${distanceFromBeach.toFixed(1)} km` : '—'}
+            <p className="text-2xl font-bold font-mono" data-testid="tracker-distance">
+              {formatDistance(geo.distanceToMonitoredM) ?? '—'}
             </p>
+            <p className="text-[10px] text-muted-foreground mt-1">{ll.fromMonitored}</p>
           </div>
 
-          {/* Direction */}
+          {/*
+            A real safety verdict needs a real hazard model, not a distance. The
+            canonical risk verdict is shown instead, sourced from the engine, and
+            it is `null` when it genuinely could not be determined.
+          */}
           <div className="glass-card p-4 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
-              <Navigation className="w-4 h-4 text-safe" />
-              <span className="text-xs text-muted-foreground">{ll.direction}</span>
+              <Info className="w-4 h-4 text-primary" aria-hidden="true" />
+              <span className="text-xs text-muted-foreground">Coastal risk</span>
             </div>
-            <p className="text-sm font-bold">{evacuationDirection || '—'}</p>
-            <p className="text-[10px] text-muted-foreground mt-1">{ll.moveInland}</p>
-          </div>
-
-          {/* Nearest safe zone */}
-          <div className="glass-card p-4 rounded-xl border-safe/20">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="w-4 h-4 text-safe" />
-              <span className="text-xs text-muted-foreground">Safe Zone</span>
-            </div>
-            <p className="text-xs font-medium">{ll.nearestSafeZone}</p>
+            <p className="text-sm font-bold" data-testid="tracker-risk-note">
+              See the command centre above
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Distance from the coast is not a safety determination. Use the risk verdict and any
+              official instruction.
+            </p>
           </div>
         </div>
-
-        {/* Status bar */}
-        {status && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className={`mt-3 p-3 rounded-xl border ${status.bg} flex items-center gap-2`}
-          >
-            <AlertTriangle className={`w-4 h-4 ${status.color} flex-shrink-0`} />
-            <span className={`text-sm font-semibold ${status.color}`}>{status.text}</span>
-          </motion.div>
-        )}
       </motion.div>
     </section>
   );

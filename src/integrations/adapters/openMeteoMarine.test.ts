@@ -78,6 +78,35 @@ describe('URL construction', () => {
     expect(url).toContain('timezone=Asia%2FKolkata');
   });
 
+  it('requests swell, current and SST on the marine current block', () => {
+    // These were previously listed in the provenance panel as fields in use
+    // while the URL never requested them, so they were permanently null.
+    const url = buildMarineUrl(COORDS);
+    expect(url).toContain('swell_wave_height');
+    expect(url).toContain('swell_wave_direction');
+    expect(url).toContain('ocean_current_velocity');
+    expect(url).toContain('sea_surface_temperature');
+  });
+
+  it('requests swell and wave period hourly, not only wave height', () => {
+    const url = buildMarineUrl(COORDS);
+    expect(url).toContain('wave_period');
+    expect(url).toContain('swell_wave_height');
+  });
+
+  it('requests the hourly block on the forecast URL too', () => {
+    // THE ORIGINAL DEFECT: this URL asked only for `current`, so the hourly
+    // forecast timeline could never be populated.
+    expect(buildForecastUrl(COORDS)).toContain('hourly=');
+  });
+
+  it('requests the gusts, precipitation and visibility the UI displays', () => {
+    const url = buildForecastUrl(COORDS);
+    expect(url).toContain('wind_gusts_10m');
+    expect(url).toContain('precipitation');
+    expect(url).toContain('visibility');
+  });
+
   it('requests precipitation probability in the forecast current block', () => {
     expect(buildForecastUrl(COORDS)).toContain('precipitation_probability');
   });
@@ -97,6 +126,47 @@ describe('normalizeMarineCurrent', () => {
     expect(result.waveHeight).toBeNull();
     expect(result.waveDirection).toBeNull();
     expect(result.wavePeriod).toBeNull();
+  });
+
+  it('normalizes swell, ocean current and sea surface temperature', () => {
+    // These live on the normalized model now, so they are actually requested
+    // and actually reachable instead of being permanently null.
+    const result = normalizeMarineCurrent({
+      current: {
+        time: '2026-09-30T19:45',
+        wave_height: 0.62,
+        swell_wave_height: 1.4,
+        swell_wave_direction: 218,
+        ocean_current_velocity: 0.35,
+        sea_surface_temperature: 28.4,
+      },
+    });
+    expect(result.swellHeight).toBe(1.4);
+    expect(result.swellDirection).toBe(218);
+    expect(result.oceanCurrentVelocity).toBe(0.35);
+    expect(result.seaSurfaceTemperature).toBe(28.4);
+  });
+
+  it('never fabricates swell, current or SST when the source omits them', () => {
+    const result = normalizeMarineCurrent({ current: { time: '2026-09-30T19:45', wave_height: 0.62 } });
+    expect(result.swellHeight).toBeNull();
+    expect(result.swellDirection).toBeNull();
+    expect(result.oceanCurrentVelocity).toBeNull();
+    expect(result.seaSurfaceTemperature).toBeNull();
+  });
+
+  it('rejects an out-of-range ocean current rather than accepting it', () => {
+    const result = normalizeMarineCurrent({
+      current: { time: '2026-09-30T19:45', wave_height: 0.62, ocean_current_velocity: 99 },
+    });
+    expect(result.oceanCurrentVelocity).toBeNull();
+  });
+
+  it('rejects an out-of-range sea surface temperature', () => {
+    const result = normalizeMarineCurrent({
+      current: { time: '2026-09-30T19:45', wave_height: 0.62, sea_surface_temperature: 80 },
+    });
+    expect(result.seaSurfaceTemperature).toBeNull();
   });
 
   it('rejects out-of-range and non-numeric values instead of coercing them', () => {

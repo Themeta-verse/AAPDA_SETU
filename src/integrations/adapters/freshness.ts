@@ -51,3 +51,22 @@ export function resolveFreshness(
   if (age <= STALE_MAX_AGE_MS) return 'stale';
   return 'unavailable';
 }
+
+/**
+ * How often the shared observation store re-derives freshness.
+ *
+ * Freshness must age over time even when no new request is made, otherwise a
+ * reading would stay labelled LIVE forever until the next poll. This is a UI
+ * re-evaluation cadence, not a network cadence.
+ */
+export const FRESHNESS_TICK_MS = 15 * 1000;
+
+/**
+ * True while a source is rate-limiting us and further requests should be held.
+ *
+ * Open-Meteo answers HTTP 429 without a `Retry-After` header, so we apply a
+ * short fixed cooldown. This prevents turning a transient limit into a
+ * self-sustaining ban by retrying on every poll tick. It is NOT a retry loop:
+ * after the cooldown the normal poll interval resumes.
+ */
+export const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;

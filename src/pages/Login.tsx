@@ -13,7 +13,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const { signUp, signIn } = useAuth();
-  const { requestLocation, permissionGranted, loading: geoLoading } = useGeolocation();
+  const { requestLocation, hasFix, status: geoStatus } = useGeolocation();
+  const geoLoading = geoStatus === 'locating';
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -146,17 +147,31 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={requestLocation}
-                  disabled={permissionGranted || geoLoading}
+                  disabled={hasFix || geoLoading}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                    permissionGranted
+                    hasFix
                       ? 'bg-safe/20 text-safe'
                       : 'bg-primary/20 text-primary hover:bg-primary/30'
                   }`}
                 >
                   {geoLoading ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : permissionGranted ? '✓ Granted' : 'Enable'}
+                  ) : hasFix ? '✓ Location shared' : 'Enable'}
                 </button>
+                {/* Permission granted is not the same as having a fix, and a
+                    denial is a distinct state the user needs to see. */}
+                {geoStatus === 'denied' && (
+                  <p className="text-[10px] text-warning mt-1.5">
+                    Permission denied. Location is optional — every source and reading still works
+                    without it.
+                  </p>
+                )}
+                {geoStatus === 'unavailable' && (
+                  <p className="text-[10px] text-warning mt-1.5">
+                    Your device could not determine a position. You can grant access again or
+                    continue without it.
+                  </p>
+                )}
               </div>
               <p className="text-[11px] text-muted-foreground mt-1.5">
                 Required for GPS tracking & distance calculations

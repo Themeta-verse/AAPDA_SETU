@@ -36,19 +36,42 @@ export const WEATHER_SOURCE_LABEL = 'Open-Meteo Forecast';
 
 const MARINE_BASE = 'https://marine-api.open-meteo.com/v1/marine';
 const FORECAST_BASE = 'https://api.open-meteo.com/v1/forecast';
-const TIMEZONE = 'Asia/Kolkata';
 
-const MARINE_CURRENT_FIELDS = 'wave_height,wave_direction,wave_period';
-const MARINE_HOURLY_FIELDS = 'wave_height';
+const MARINE_CURRENT_FIELDS =
+  'wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,ocean_current_velocity,sea_surface_temperature';
+export const MARINE_HOURLY_FIELDS =
+  'wave_height,wave_period,swell_wave_height,swell_wave_direction';
+
+/**
+ * Atmospheric variables for the current block.
+ *
+ * Wind, gusts, precipitation probability, temperature and pressure are NOT
+ * published by the Marine endpoint, so they come from the Forecast endpoint.
+ */
 const FORECAST_CURRENT_FIELDS =
   'temperature_2m,wind_speed_10m,wind_direction_10m,weather_code,surface_pressure,precipitation_probability';
+export const FORECAST_HOURLY_FIELDS =
+  'temperature_2m,wind_speed_10m,wind_gusts_10m,precipitation,precipitation_probability,visibility';
+
+/**
+ * Days requested from BOTH endpoints.
+ *
+ * Three days (72 h) rather than one, so a 48-hour timeline can be carved out
+ * after part of today has already elapsed. This is the single request that
+ * serves both the current-conditions reading and the forecast timeline, so the
+ * surplus hours cost nothing and there is no duplicate fetch.
+ */
+export const FORECAST_REQUEST_DAYS = 3;
+
+export const SOURCE_TIMEZONE = 'Asia/Kolkata';
 
 export function buildMarineUrl({ latitude, longitude }: Coordinates): string {
   return (
     `${MARINE_BASE}?latitude=${latitude}&longitude=${longitude}` +
     `&current=${MARINE_CURRENT_FIELDS}` +
     `&hourly=${MARINE_HOURLY_FIELDS}` +
-    `&forecast_days=1&timezone=${encodeURIComponent(TIMEZONE)}`
+    `&forecast_days=${FORECAST_REQUEST_DAYS}` +
+    `&timezone=${encodeURIComponent(SOURCE_TIMEZONE)}`
   );
 }
 
@@ -56,7 +79,9 @@ export function buildForecastUrl({ latitude, longitude }: Coordinates): string {
   return (
     `${FORECAST_BASE}?latitude=${latitude}&longitude=${longitude}` +
     `&current=${FORECAST_CURRENT_FIELDS}` +
-    `&timezone=${encodeURIComponent(TIMEZONE)}`
+    `&hourly=${FORECAST_HOURLY_FIELDS}` +
+    `&forecast_days=${FORECAST_REQUEST_DAYS}` +
+    `&timezone=${encodeURIComponent(SOURCE_TIMEZONE)}`
   );
 }
 
@@ -78,8 +103,14 @@ function emptyMetadata(url: string, id: SourceMetadata['id'], label: string): So
 /**
  * Read one endpoint. Distinguishes transport failure, HTTP failure, an
  * explicit `{ error: true }` payload, and unparseable bodies.
+ *
+ * EXPORTED so the shared observation store can read each endpoint ONCE and
+ * feed the raw bodies to both the current-conditions normalizer and the
+ * forecast-horizon normalizer. When each adapter fetched independently the
+ * same two URLs were requested twice per cycle, which was observed causing real
+ * HTTP 429 responses from the Marine endpoint.
  */
-async function readEndpoint(
+export async function readEndpoint(
   url: string,
   sourceId: SourceMetadata['id'],
   fetchImpl: typeof fetch,
@@ -136,18 +167,55 @@ async function readEndpoint(
   return { data: body, error: null };
 }
 
+/**
+ * The marine `current` block, normalized.
+ *
+ * `observedAt` is the timestamp the SOURCE published for this reading. It is
+ * deliberately a property of this block rather than of `NormalizedMarine`,
+ * because on a `NormalizedMarine` the observation time lives on
+ * `source.observedAt` — keeping it out of the measurement fields stops the two
+ * from being able to disagree.
+ */
+export interface MarineCurrentReading {
+  waveHeight: number | null;
+  waveDirection: number | null;
+  wavePeriod: number | null;
+  swellHeight: number | null;
+  swellDirection: number | null;
+  oceanCurrentVelocity: number | null;
+  seaSurfaceTemperature: number | null;
+  observedAt: string | null;
+}
+
 /** Normalise the marine `current` block. Missing fields stay `null`. */
-export function normalizeMarineCurrent(
-  payload: MarinePayload
-): Pick<NormalizedMarine, 'waveHeight' | 'waveDirection' | 'wavePeriod' | 'observedAt'> {
+export function normalizeMarineCurrent(payload: MarinePayload): MarineCurrentReading {
   const current = isRecord(payload.current) ? payload.current : null;
   if (!current) {
-    return { waveHeight: null, waveDirection: null, wavePeriod: null, observedAt: null };
+    return {
+      waveHeight: null,
+      waveDirection: null,
+      wavePeriod: null,
+      swellHeight: null,
+      swellDirection: null,
+      oceanCurrentVelocity: null,
+      seaSurfaceTemperature: null,
+      observedAt: null,
+    };
   }
   return {
     waveHeight: validateField(current.wave_height, MARINE_RANGES.waveHeight),
     waveDirection: validateField(current.wave_direction, MARINE_RANGES.waveDirection),
     wavePeriod: validateField(current.wave_period, MARINE_RANGES.wavePeriod),
+    swellHeight: validateField(current.swell_wave_height, MARINE_RANGES.swellHeight),
+    swellDirection: validateField(current.swell_wave_direction, MARINE_RANGES.waveDirection),
+    oceanCurrentVelocity: validateField(
+      current.ocean_current_velocity,
+      MARINE_RANGES.oceanCurrentVelocity
+    ),
+    seaSurfaceTemperature: validateField(
+      current.sea_surface_temperature,
+      MARINE_RANGES.seaSurfaceTemperature
+    ),
     observedAt: validateTimestamp(current.time),
   };
 }
@@ -221,6 +289,10 @@ export function normalizeMarineSources(
     waveHeight: sea.waveHeight,
     waveDirection: sea.waveDirection,
     wavePeriod: sea.wavePeriod,
+    swellHeight: sea.swellHeight,
+    swellDirection: sea.swellDirection,
+    oceanCurrentVelocity: sea.oceanCurrentVelocity,
+    seaSurfaceTemperature: sea.seaSurfaceTemperature,
     hourly: normalizeMarineHourly(marineBody),
     ...normalizeForecastCurrent(forecastBody),
     error,
@@ -240,6 +312,10 @@ export function emptyMarineReading(coordinates: Coordinates): NormalizedMarine {
     waveHeight: null,
     waveDirection: null,
     wavePeriod: null,
+    swellHeight: null,
+    swellDirection: null,
+    oceanCurrentVelocity: null,
+    seaSurfaceTemperature: null,
     hourly: [],
     windSpeed: null,
     windDirection: null,

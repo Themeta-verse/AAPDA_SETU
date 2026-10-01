@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Eye, MapPin, Globe, Shield, Volume2, ArrowUpFromLine, Phone } from 'lucide-react';
-import { type Language, translations, voiceAlertTexts, speakAlert, stopSpeaking } from '@/lib/translations';
+import { type Language, translations } from '@/lib/translations';
+import { speak, stopSpeech } from '@/voice/speech';
 import { useState } from 'react';
 
 interface TouristModeProps {
@@ -18,17 +19,25 @@ export function TouristMode({ language }: TouristModeProps) {
     { icon: Phone, text: t.step4, color: 'text-warning', bg: 'bg-warning/10 border-warning/20' },
   ];
 
-  const handleVoice = () => {
+  /**
+   * Read the visitor safety steps aloud.
+   *
+   * This used to speak the canned PRODUCTION high-wave alert, so tapping a
+   * tourist-safety control announced an emergency that was not happening. It now
+   * reads the four on-screen safety steps, which is what the section is for.
+   * Live conditions are spoken by the single voice panel in the command center.
+   */
+  const handleVoice = async () => {
     if (speaking) {
-      stopSpeaking();
+      stopSpeech();
       setSpeaking(false);
       return;
     }
-    const text = voiceAlertTexts[language].highWave;
-    if (text) {
-      setSpeaking(true);
-      speakAlert(text, language, () => setSpeaking(false));
-    }
+    setSpeaking(true);
+    await speak(
+      tips.map((tip, i) => `Step ${i + 1}. ${tip.text}`).join(' '),
+      { language, onEnd: () => setSpeaking(false) }
+    );
   };
 
   return (

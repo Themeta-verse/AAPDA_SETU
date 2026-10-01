@@ -19,7 +19,7 @@
  *     about what the caller may see.
  */
 
-import type { IncidentType, Tables } from './types';
+import type { IncidentType, Tables, TablesInsert } from './types';
 
 export type { IncidentType };
 
@@ -373,7 +373,10 @@ export async function submitIncident(
     }
   }
 
-  const payload: Tables<'incident_reports'>['Insert'] = {
+  // `TablesInsert` is the helper that actually extracts the Insert shape. The
+  // local `Tables` alias resolves to the Row shape, so indexing it with
+  // `['Insert']` was never type-correct and silently lost the column types.
+  const payload: TablesInsert<'incident_reports'> = {
     user_id: input.reporterId,
     type: input.type,
     description: input.description.trim(),

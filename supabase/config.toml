@@ -14,3 +14,11 @@ verify_jwt = true
 
 [functions.ai-chat]
 verify_jwt = true
+
+# IMD and INCOIS are unreadable from a browser because of CORS, which is a
+# browser-only restriction. This function makes the same requests server-side so
+# the "cannot read this source" diagnosis is evidence-based rather than an
+# opaque client error. verify_jwt stays true: the responses are public web
+# pages, but the function is infrastructure, not a public API.
+[functions.official-warnings]
+verify_jwt = true

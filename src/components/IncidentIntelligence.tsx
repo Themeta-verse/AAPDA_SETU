@@ -402,11 +402,15 @@ export function IncidentIntelligence({ language, user, client }: IncidentIntelli
 
       <div className="glass-card rounded-2xl p-5 sm:p-6">{renderBody()}</div>
 
-      {showRefresh && state.kind !== 'loading' && state.fetchedAt && (
-        <p className="text-xs text-muted-foreground mt-3" data-testid="incident-fetched-at">
-          {t.lastUpdated}: {formatTimestamp(state.fetchedAt)}
-        </p>
-      )}
+      {showRefresh &&
+        state.kind !== 'loading' &&
+        state.kind !== 'unauthenticated' &&
+        'fetchedAt' in state &&
+        state.fetchedAt && (
+          <p className="text-xs text-muted-foreground mt-3" data-testid="incident-fetched-at">
+            {t.lastUpdated}: {formatTimestamp(state.fetchedAt)}
+          </p>
+        )}
     </section>
   );
 }

@@ -1,38 +1,37 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, Waves, WifiOff } from 'lucide-react';
+import { Waves, WifiOff } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea } from 'recharts';
 import { type Language, translations } from '@/lib/translations';
 import { statusHasMeasurements } from '@/lib/monitoringData';
+import { formatForecastHourLabel, formatInstantInSourceTimezone } from '@/lib/sourceTime';
+import { LIVE_MAX_AGE_MS, STALE_MAX_AGE_MS } from '@/integrations/adapters/freshness';
 import type { NormalizedMarine } from '@/hooks/useWeatherData';
 
-interface TideForecastProps {
+interface WaveForecastProps {
   language: Language;
   marine: NormalizedMarine;
 }
 
+/**
+ * Status copy. STALE explicitly cites the real threshold rather than claiming
+ * "over 5 minutes", which is the LIVE window and not the STALE one.
+ */
 const STATUS_TEXT = {
-  live: 'Live marine data — Open-Meteo Marine',
-  stale: 'Stale marine data — last successful read is over 5 minutes old',
-  unavailable: 'No marine data available',
-  offline: 'Offline — showing the last received marine reading',
+  live: 'Live wave data — Open-Meteo Marine',
+  stale: `Stale wave data — last successful read is over ${Math.round(LIVE_MAX_AGE_MS / 60000)} minutes old`,
+  unavailable: 'No wave data available',
+  offline: 'Offline — showing the last received wave reading',
 } as const;
 
-function formatHour(iso: string): string {
-  // Source timestamps are `YYYY-MM-DDTHH:mm` in the source timezone with no
-  // offset, so we slice rather than parse (parsing would shift them to UTC).
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/.exec(iso);
-  return match ? `${match[2]}:${match[3]}` : iso;
-}
-
-export function TideForecast({ language, marine }: TideForecastProps) {
+export function WaveForecast({ language, marine }: WaveForecastProps) {
   const t = translations[language];
   const { status } = marine;
 
   const data = useMemo(
     () =>
       marine.hourly.map((point) => ({
-        hour: formatHour(point.time),
+        hour: formatForecastHourLabel(point.time),
         waveHeight: point.waveHeight,
       })),
     [marine.hourly]
@@ -45,9 +44,33 @@ export function TideForecast({ language, marine }: TideForecastProps) {
     ? heights.reduce((sum, h) => sum + h, 0) / heights.length
     : null;
 
+  /**
+   * Render one statistic.
+   *
+   * A null statistic renders an explicit em dash and muted styling. The previous
+   * `${maxWave?.toFixed(1)}m` produced the bare string "m" for a null value —
+   * a coloured, green "Min  m" tile that reads as a real measurement.
+   */
+  const stat = (value: number | null) =>
+    value === null ? (
+      <span className="text-muted-foreground" title="Source did not publish this value">
+        —
+      </span>
+    ) : (
+      `${value.toFixed(1)}m`
+    );
+
   // The chart renders only when freshness says we may present readings AND
   // the source actually sent a wave series. Either missing means no chart.
   const hasChart = data.length > 0 && statusHasMeasurements(status);
+
+  // Keep the reference bands above the data and above the HIGH threshold even
+  // when the observed maximum is well below it, so the bands stay meaningful.
+  const chartTop = Math.max(maxWave ?? 0, 4.5);
+  const yDomain: [number, number] = [
+    Math.max(0, Math.floor((minWave ?? 0) * 2) / 2),
+    Math.ceil(chartTop * 2) / 2,
+  ];
 
   return (
     <section className="container py-8" aria-label="Marine wave forecast">
@@ -109,8 +132,8 @@ export function TideForecast({ language, marine }: TideForecastProps) {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(215, 20%, 22%)" strokeOpacity={0.5} />
-                    <ReferenceArea y1={3.5} y2={Math.max(maxWave ?? 0, 4.5)} fill="hsl(38, 92%, 50%)" fillOpacity={0.08} />
-                    <ReferenceArea y1={4.0} y2={Math.max(maxWave ?? 0, 4.5)} fill="hsl(0, 72%, 51%)" fillOpacity={0.1} />
+                    <ReferenceArea y1={3.5} y2={chartTop} fill="hsl(38, 92%, 50%)" fillOpacity={0.08} />
+                    <ReferenceArea y1={4.0} y2={chartTop} fill="hsl(0, 72%, 51%)" fillOpacity={0.1} />
                     <ReferenceLine y={3.5} stroke="hsl(38, 92%, 50%)" strokeDasharray="4 4" strokeOpacity={0.7} label={{ value: '3.5m', position: 'right', fill: 'hsl(38, 92%, 50%)', fontSize: 10 }} />
                     <ReferenceLine y={4.0} stroke="hsl(0, 72%, 51%)" strokeDasharray="4 4" strokeOpacity={0.7} label={{ value: '4.0m', position: 'right', fill: 'hsl(0, 72%, 51%)', fontSize: 10 }} />
                     <XAxis
@@ -124,10 +147,7 @@ export function TideForecast({ language, marine }: TideForecastProps) {
                       tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 10 }}
                       tickLine={false}
                       axisLine={false}
-                      domain={[
-                        Math.floor((minWave ?? 0) * 2) / 2,
-                        Math.ceil((maxWave ?? 1) * 2) / 2,
-                      ]}
+                      domain={yDomain}
                       unit="m"
                     />
                     <Tooltip
@@ -159,16 +179,16 @@ export function TideForecast({ language, marine }: TideForecastProps) {
               <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-4 pt-4 border-t border-border">
                 <div className="text-center">
                   <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">{t.waveForecastHigh}</p>
-                  <p className="text-lg sm:text-xl font-bold font-mono text-warning">{maxWave?.toFixed(1)}m</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono text-warning">{stat(maxWave)}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">{t.waveForecastLow}</p>
-                  <p className="text-lg sm:text-xl font-bold font-mono text-safe">{minWave?.toFixed(1)}m</p>
+                  <p className="text-lg sm:text-xl font-bold font-mono text-safe">{stat(minWave)}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">{t.waveForecastAvg}</p>
                   <p className="text-lg sm:text-xl font-bold font-mono text-primary">
-                    {avgWave?.toFixed(1)}m
+                    {stat(avgWave)}
                   </p>
                 </div>
               </div>
@@ -185,7 +205,7 @@ export function TideForecast({ language, marine }: TideForecastProps) {
             <div className="flex flex-col items-center justify-center text-center gap-3 py-8">
               <Waves className="w-10 h-10 text-muted-foreground/50" />
               <p className="text-sm font-semibold text-foreground">
-                {status === 'offline' ? 'Offline — no marine data' : 'No marine wave data available'}
+                {status === 'offline' ? 'Offline — no wave data' : 'No wave data available'}
               </p>
               <p className="text-xs text-muted-foreground max-w-md">
                 {status === 'offline'
@@ -203,7 +223,7 @@ export function TideForecast({ language, marine }: TideForecastProps) {
 
         {marine.fetchedAt && (
           <p className="mt-3 text-[10px] font-mono text-muted-foreground/70">
-            Last read: {marine.fetchedAt}
+            Last read: {formatInstantInSourceTimezone(marine.fetchedAt)} IST
           </p>
         )}
       </motion.div>

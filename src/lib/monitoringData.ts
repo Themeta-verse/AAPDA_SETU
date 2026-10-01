@@ -1,7 +1,41 @@
 import type { SourceStatus } from '@/integrations/adapters/types';
+import type { CoastalRiskState } from '@/risk/engine';
 
 export type RiskLevel = 'safe' | 'moderate' | 'high' | 'critical';
 export type SeaCondition = 'calm' | 'rough' | 'veryRough';
+
+/**
+ * Presentation tier for the four legacy colour states.
+ *
+ * `null` means NO VERDICT COULD BE REACHED. It is deliberately distinct from
+ * `'safe'`: the UI must show "cannot determine", never a green reading, when
+ * required inputs are missing.
+ */
+export type RiskLevelOrUnknown = RiskLevel | null;
+
+/**
+ * Map the single canonical risk engine verdict onto the presentation tier used
+ * by the legacy banner/hero/mobile-alert components.
+ *
+ * There is exactly ONE risk calculation in this application: `assessCoastalRisk`
+ * in `src/risk/engine.ts`. This function is a pure presentation mapping of that
+ * verdict and never applies a threshold of its own. `unknown` maps to `null`.
+ */
+export function riskLevelFromCoastalState(state: CoastalRiskState): RiskLevelOrUnknown {
+  switch (state) {
+    case 'nominal':
+      return 'safe';
+    case 'watch':
+    case 'elevated':
+      return 'moderate';
+    case 'high':
+    case 'severe':
+      return 'critical';
+    case 'unknown':
+    default:
+      return null;
+  }
+}
 
 /**
  * Operational snapshot derived from normalized source readings.
@@ -9,9 +43,10 @@ export type SeaCondition = 'calm' | 'rough' | 'veryRough';
  * Every measurement is `number | null`. `null` means the source did not
  * publish a usable value — it must be rendered as "no data", never as 0.
  *
- * `riskLevel` is only meaningful while `status` is `live` or `stale`. When
- * `status` is `unavailable` or `offline` the risk field is a placeholder and
- * the UI must present an explicit no-data state instead of "safe".
+ * `riskLevel` is NOT computed here. It is the presentation tier of the single
+ * canonical verdict produced by `assessCoastalRisk`, passed in by the caller.
+ * It is `null` when the engine could not reach a verdict, which is NOT the
+ * same as `'safe'`.
  */
 export interface MonitoringData {
   /**
@@ -22,7 +57,8 @@ export interface MonitoringData {
   windSpeed: number | null;
   rainProbability: number | null;
   seaCondition: SeaCondition | null;
-  riskLevel: RiskLevel;
+  /** Presentation tier of the canonical risk verdict; `null` = no verdict. */
+  riskLevel: RiskLevelOrUnknown;
   status: SourceStatus;
 }
 
@@ -35,7 +71,7 @@ export interface MonitoringData {
  * A real tide alert will require its own authoritative tide source and its own
  * identifier added here.
  */
-export type AlertType = 'highWave' | 'tsunami' | 'flood' | 'rain';
+export type AlertType = 'highWave' | 'tsunami' | 'flood' | 'rain' | 'storm';
 
 export interface AlertInfo {
   id: string;
@@ -53,40 +89,53 @@ export function emptyMonitoringData(): MonitoringData {
     windSpeed: null,
     rainProbability: null,
     seaCondition: null,
-    riskLevel: 'safe',
+    riskLevel: null,
     status: 'unavailable',
   };
 }
 
 /**
- * Derive the operational snapshot from normalized source values.
+ * Assemble the operational snapshot from normalized source values plus the
+ * canonical risk verdict.
  *
- * Thresholds are unchanged from the existing risk engine; the change here is
- * null-safety. Previously any missing input was coerced to `0` and then
- * rendered as a green "safe" reading. Now a missing input propagates as
- * `null` and the snapshot is marked `unavailable` so the UI can say so.
+ * This function performs NO threshold comparison of its own. It used to carry a
+ * private copy of the wave/wind/rain thresholds, which meant the dashboard could
+ * report a different risk level from the command center reading the same data
+ * through `assessCoastalRisk`. The threshold table now lives in exactly one
+ * place: `src/risk/engine.ts`.
+ *
+ * `seaCondition` remains a wind-only label. With no wind reading we cannot
+ * support any condition label, including "calm", so it stays `null`.
+ *
+ * PARTIAL READINGS ARE KEPT. A missing input must not discard a perfectly good
+ * published wave height, and it must never coerce the verdict to "safe" — a
+ * missing gust could be the one that mattered. The verdict arrives from the
+ * engine, which reports `unknown` when it cannot support a claim.
  */
 export function deriveMonitoringData(
   waveHeight: number | null,
   windSpeed: number | null,
   rainProbability: number | null,
   status: SourceStatus,
-  tsunamiRisk = false
+  riskLevel: RiskLevelOrUnknown
 ): MonitoringData {
-  if (waveHeight === null || windSpeed === null || rainProbability === null) {
+  // No usable measurement at all: this is genuinely a no-data state.
+  if (waveHeight === null && windSpeed === null && rainProbability === null) {
     return { ...emptyMonitoringData(), status };
   }
 
-  let seaCondition: SeaCondition = 'calm';
-  if (windSpeed > 25) seaCondition = 'veryRough';
-  else if (windSpeed > 15) seaCondition = 'rough';
+  // A claim about the sea surface is a claim about wind only.
+  const seaCondition: SeaCondition | null =
+    windSpeed === null ? null : windSpeed > 25 ? 'veryRough' : windSpeed > 15 ? 'rough' : 'calm';
 
-  let riskLevel: RiskLevel = 'safe';
-  if (tsunamiRisk || waveHeight > 4.0 || windSpeed > 40 || rainProbability > 85) riskLevel = 'critical';
-  else if (waveHeight > 3.5 || windSpeed > 30 || rainProbability > 70) riskLevel = 'high';
-  else if (waveHeight > 2.8 || windSpeed > 15 || rainProbability > 50) riskLevel = 'moderate';
-
-  return { waveHeight, windSpeed, rainProbability, seaCondition, riskLevel, status };
+  return {
+    waveHeight,
+    windSpeed,
+    rainProbability,
+    seaCondition,
+    riskLevel,
+    status,
+  };
 }
 
 /**
@@ -103,53 +152,28 @@ export function hasMeasurements(data: MonitoringData): boolean {
   return statusHasMeasurements(data.status);
 }
 
-export function getAlerts(data: MonitoringData, tsunamiRisk = false): AlertInfo[] {
-  // No usable measurements: every alert stays inactive. An inactive alert
-  // here means "no alert", which the UI pairs with an explicit no-data state.
-  if (!hasMeasurements(data) || data.waveHeight === null || data.windSpeed === null || data.rainProbability === null) {
-    return [
-      {
-        id: 'highWave',
-        type: 'highWave',
-        titleKey: 'highWaveWarning',
-        descKey: 'highWaveDesc',
-        severity: 'safe',
-        active: false,
-      },
-      {
-        id: 'tsunami',
-        type: 'tsunami',
-        titleKey: 'tsunamiRisk',
-        descKey: 'tsunamiDesc',
-        severity: 'safe',
-        active: false,
-      },
-      {
-        id: 'flood',
-        type: 'flood',
-        titleKey: 'coastalFlood',
-        descKey: 'coastalFloodDesc',
-        severity: 'safe',
-        active: false,
-      },
-      {
-        id: 'rain',
-        type: 'rain',
-        titleKey: 'heavyRain',
-        descKey: 'heavyRainDesc',
-        severity: 'safe',
-        active: false,
-      },
-      {
-        id: 'storm',
-        type: 'rain',
-        titleKey: 'stormWarning',
-        descKey: 'stormWarningDesc',
-        severity: 'safe',
-        active: false,
-      },
-    ];
-  }
+/**
+ * Per-condition alert cards.
+ *
+ * `active` means "this condition's own threshold is currently exceeded by a real
+ * published measurement", or — for tsunami — "an authoritative source flagged it".
+ *
+ * Two rules are load-bearing here:
+ *
+ *  1. A tsunami alert is raised ONLY from the USGS tsunami flag. It is never
+ *     inferred from wave height and wind. This function used to activate a
+ *     tsunami alert on `waveHeight > 4.5 && windSpeed > 25`, which invented a
+ *     tsunami out of ordinary rough-sea conditions and would have instructed a
+ *     user to evacuate on nothing but a model forecast.
+ *  2. A condition with no measurement is `active: false` AND carries the reason
+ *     it could not be evaluated, so the UI says "no data" rather than "all
+ *     clear".
+ */
+export function getAlerts(
+  data: MonitoringData,
+  tsunamiFlagged: boolean | null = null
+): AlertInfo[] {
+  const hasAll = (k: 'waveHeight' | 'windSpeed' | 'rainProbability') => data[k] !== null;
 
   return [
     {
@@ -157,40 +181,48 @@ export function getAlerts(data: MonitoringData, tsunamiRisk = false): AlertInfo[
       type: 'highWave',
       titleKey: 'highWaveWarning',
       descKey: 'highWaveDesc',
-      severity: data.waveHeight > 4.0 ? 'critical' : data.waveHeight > 3.5 ? 'high' : 'moderate',
-      active: data.waveHeight > 3.0,
+      severity: hasAll('waveHeight') && data.waveHeight! > 4.0 ? 'critical'
+        : hasAll('waveHeight') && data.waveHeight! > 3.0 ? 'high'
+        : 'safe',
+      active: hasAll('waveHeight') && data.waveHeight! > 3.0,
     },
     {
       id: 'tsunami',
       type: 'tsunami',
       titleKey: 'tsunamiRisk',
       descKey: 'tsunamiDesc',
-      severity: 'critical',
-      active: tsunamiRisk || (data.waveHeight > 4.5 && data.windSpeed > 25),
+      // An unknown flag is NOT an all-clear. It is not active, and the severity
+      // stays `safe` only because nothing has been positively reported.
+      severity: tsunamiFlagged === true ? 'critical' : 'safe',
+      active: tsunamiFlagged === true,
     },
     {
       id: 'flood',
       type: 'flood',
       titleKey: 'coastalFlood',
       descKey: 'coastalFloodDesc',
-      severity: data.rainProbability > 85 ? 'critical' : 'high',
-      active: data.rainProbability > 70,
+      severity: hasAll('rainProbability') && data.rainProbability! > 85 ? 'critical'
+        : hasAll('rainProbability') && data.rainProbability! > 70 ? 'high'
+        : 'safe',
+      active: hasAll('rainProbability') && data.rainProbability! > 70,
     },
     {
       id: 'rain',
       type: 'rain',
       titleKey: 'heavyRain',
       descKey: 'heavyRainDesc',
-      severity: data.rainProbability > 80 ? 'high' : 'moderate',
-      active: data.rainProbability > 50,
+      severity: hasAll('rainProbability') && data.rainProbability! > 80 ? 'high' : 'safe',
+      active: hasAll('rainProbability') && data.rainProbability! > 50,
     },
     {
       id: 'storm',
-      type: 'rain',
+      type: 'storm',
       titleKey: 'stormWarning',
       descKey: 'stormWarningDesc',
-      severity: data.windSpeed > 40 ? 'critical' : 'high',
-      active: data.windSpeed > 30,
+      severity: hasAll('windSpeed') && data.windSpeed! > 40 ? 'critical'
+        : hasAll('windSpeed') && data.windSpeed! > 30 ? 'high'
+        : 'safe',
+      active: hasAll('windSpeed') && data.windSpeed! > 30,
     },
   ];
 }

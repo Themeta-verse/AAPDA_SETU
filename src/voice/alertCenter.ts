@@ -23,6 +23,8 @@
 import type { CoastalRiskAssessment, HazardFeatures } from '../risk/engine';
 import type { OfficialWarningStatus } from '@/integrations/adapters/types';
 import { formatState } from '../risk/explain';
+import { formatInstantInSourceTimezone } from '@/lib/sourceTime';
+import type { Language } from '@/lib/translations';
 
 export type VoiceState =
   | { kind: 'idle' }
@@ -45,6 +47,182 @@ function fmt(value: number | null | undefined, unit: string, digits = 1): string
   return `${value.toFixed(digits)}${unit}`;
 }
 
+// =====================================================================
+// MULTILINGUAL SCRIPT FRAMING
+// =====================================================================
+//
+// The script is ONE canonical derivation from observed state. Only the fixed
+// framing sentences are translated; every number, state label and timestamp is
+// interpolated identically in all four languages from the same observed
+// values. A translation therefore cannot change what is claimed, only the
+// language it is claimed in.
+//
+// The `en` column holds the exact historical wording so existing behaviour
+// (and tests) are unchanged. Canonical state/quality words ("Nominal",
+// "CURRENT", ...) stay in English in every language because they are the exact
+// labels the rest of the UI renders; translating them would disconnect the
+// spoken alert from the badges on screen.
+
+interface VoiceStrings {
+  header: string;
+  riskUnknown: string;
+  riskIs: (state: string) => string;
+  waveIs: (wave: string) => string;
+  waveUnavailable: string;
+  fieldWaveHeight: string;
+  swellIs: (swell: string) => string;
+  swellUnavailable: string;
+  fieldSwellHeight: string;
+  windIs: (wind: string) => string;
+  windUnavailable: string;
+  fieldWindSpeed: string;
+  gustsAre: (gust: string) => string;
+  fieldWindGusts: string;
+  warningActive: string;
+  warningNone: string;
+  warningUnknown: string;
+  fieldWarningState: string;
+  tsunamiPresent: string;
+  tsunamiNotFlagged: string;
+  tsunamiUnknown: string;
+  fieldTsunamiStatus: string;
+  qualityIs: (state: string, assessment: string) => string;
+  allClear: string;
+  notConfirmingSafety: (count: number) => string;
+  retrievedAt: (when: string) => string;
+}
+
+const VOICE_STRINGS: Record<Language, VoiceStrings> = {
+  en: {
+    header: 'BayWatch coastal alert.',
+    riskUnknown: 'Coastal risk state is unknown because required data is unavailable.',
+    riskIs: (state) => `Coastal risk state is ${state}.`,
+    waveIs: (wave) => `Significant wave height is ${wave}.`,
+    waveUnavailable: 'Significant wave height is currently unavailable.',
+    fieldWaveHeight: 'wave height',
+    swellIs: (swell) => `Swell wave height is ${swell}.`,
+    swellUnavailable: 'Swell wave height is currently unavailable.',
+    fieldSwellHeight: 'swell height',
+    windIs: (wind) => `Sustained wind is ${wind}.`,
+    windUnavailable: 'Wind speed is currently unavailable.',
+    fieldWindSpeed: 'wind speed',
+    gustsAre: (gust) => `Wind gusts are ${gust}.`,
+    fieldWindGusts: 'wind gusts',
+    warningActive: 'An official IMD or INCOIS warning is currently active.',
+    warningNone: 'The official bulletins this application can read report no active warning.',
+    warningUnknown:
+      'Official IMD and INCOIS bulletins could not be read, so warning status is unknown. ' +
+      'This is not an all-clear.',
+    fieldWarningState: 'official warning state',
+    tsunamiPresent: 'An official tsunami flag is present for a recent regional event.',
+    tsunamiNotFlagged:
+      'The USGS published a non-tsunami flag for regional events. This is not a tsunami prediction.',
+    tsunamiUnknown: 'Tsunami status is currently unknown.',
+    fieldTsunamiStatus: 'tsunami status',
+    qualityIs: (state, assessment) => `Data quality is ${state}, assessed ${assessment}.`,
+    allClear: 'All monitored sources are current and no threshold has been crossed.',
+    notConfirmingSafety: (count) =>
+      `This alert does not confirm safety. ${count} input(s) are unavailable.`,
+    retrievedAt: (when) => `Data retrieved at ${when} IST.`,
+  },
+  hi: {
+    header: 'बेवॉच तटीय चेतावनी।',
+    riskUnknown: 'आवश्यक डेटा उपलब्ध नहीं है, इसलिए तटीय जोखिम स्थिति अज्ञात है।',
+    riskIs: (state) => `तटीय जोखिम स्थिति ${state} है।`,
+    waveIs: (wave) => `महत्वपूर्ण लहर ऊंचाई ${wave} है।`,
+    waveUnavailable: 'महत्वपूर्ण लहर ऊंचाई वर्तमान में उपलब्ध नहीं है।',
+    fieldWaveHeight: 'लहर ऊंचाई',
+    swellIs: (swell) => `प्रभावी सूजन लहर ऊंचाई ${swell} है।`,
+    swellUnavailable: 'सूजन लहर ऊंचाई वर्तमान में उपलब्ध नहीं है।',
+    fieldSwellHeight: 'सूजन लहर ऊंचाई',
+    windIs: (wind) => `निरंतर हवा ${wind} है।`,
+    windUnavailable: 'हवा की गति वर्तमान में उपलब्ध नहीं है।',
+    fieldWindSpeed: 'हवा की गति',
+    gustsAre: (gust) => `हवा के झोंके ${gust} हैं।`,
+    fieldWindGusts: 'हवा के झोंके',
+    warningActive: 'वर्तमान में IMD या INCOIS की आधिकारिक चेतावनी सक्रिय है।',
+    warningNone: 'इस एप्लिकेशन द्वारा पढ़े गए आधिकारिक बुलेटिनों में कोई सक्रिय चेतावनी नहीं है।',
+    warningUnknown:
+      'IMD और INCOIS के आधिकारिक बुलेटिन पढ़े नहीं जा सके, इसलिए चेतावनी स्थिति अज्ञात है। ' +
+      'यह पूर्ण सुरक्षा की घोषणा नहीं है।',
+    fieldWarningState: 'आधिकारिक चेतावनी स्थिति',
+    tsunamiPresent: 'हाल की क्षेत्रीय घटना के लिए आधिकारिक सुनामी ध्वज मौजूद है।',
+    tsunamiNotFlagged:
+      'USGS ने क्षेत्रीय घटनाओं के लिए गैर-सुनामी ध्वज प्रकाशित किया है। यह सुनामी की भविष्यवाणी नहीं है।',
+    tsunamiUnknown: 'सुनामी स्थिति वर्तमान में अज्ञात है।',
+    fieldTsunamiStatus: 'सुनामी स्थिति',
+    qualityIs: (state, assessment) => `डेटा गुणवत्ता ${state} है, मूल्यांकन ${assessment}।`,
+    allClear: 'सभी निगरानी स्रोत वर्तमान हैं और कोई सीमा पार नहीं हुई है।',
+    notConfirmingSafety: (count) =>
+      `यह चेतावनी सुरक्षा की पुष्टि नहीं करती। ${count} इनपुट उपलब्ध नहीं हैं।`,
+    retrievedAt: (when) => `डेटा ${when} IST पर प्राप्त किया गया।`,
+  },
+  mr: {
+    header: 'बेवॉच किनारपट्टी इशारा।',
+    riskUnknown: 'आवश्यक डेटा उपलब्ध नाही, म्हणून किनारपट्टी जोखीम स्थिती अज्ञात आहे।',
+    riskIs: (state) => `किनारपट्टी जोखीम स्थिती ${state} आहे।`,
+    waveIs: (wave) => `महत्त्वाची लाट उंची ${wave} आहे।`,
+    waveUnavailable: 'महत्त्वाची लाट उंची सध्या उपलब्ध नाही।',
+    fieldWaveHeight: 'लाट उंची',
+    swellIs: (swell) => `उफान लाट उंची ${swell} आहे।`,
+    swellUnavailable: 'उफान लाट उंची सध्या उपलब्ध नाही।',
+    fieldSwellHeight: 'उफान लाट उंची',
+    windIs: (wind) => `सातत्यपूर्ण वारा ${wind} आहे।`,
+    windUnavailable: 'वाऱ्याचा वेग सध्या उपलब्ध नाही।',
+    fieldWindSpeed: 'वाऱ्याचा वेग',
+    gustsAre: (gust) => `वाऱ्याचे झोत ${gust} आहेत।`,
+    fieldWindGusts: 'वाऱ्याचे झोत',
+    warningActive: 'सध्या IMD किंवा INCOIS ची अधिकृत चेतावणी सक्रिय आहे।',
+    warningNone: 'या ॲपला वाचता आलेल्या अधिकृत बुलेटिनमध्ये कोणतीही सक्रिय चेतावणी नाही।',
+    warningUnknown:
+      'IMD आणि INCOIS ची अधिकृत बुलेटिन वाचता आली नाहीत, म्हणून चेतावणी स्थिती अज्ञात आहे। ' +
+      'ही पूर्ण सुरक्षेची घोषणा नाही।',
+    fieldWarningState: 'अधिकृत चेतावणी स्थिती',
+    tsunamiPresent: 'अलीकडील प्रादेशिक घटनेसाठी अधिकृत त्सुनामी ध्वज आहे।',
+    tsunamiNotFlagged:
+      'USGS ने प्रादेशिक घटनांसाठी त्सुनामी-नसलेला ध्वज प्रकाशित केला आहे। ही त्सुनामी भविष्यवाणी नाही।',
+    tsunamiUnknown: 'त्सुनामी स्थिती सध्या अज्ञात आहे।',
+    fieldTsunamiStatus: 'त्सुनामी स्थिती',
+    qualityIs: (state, assessment) => `डेटा गुणवत्ता ${state} आहे, मूल्यांकन ${assessment}।`,
+    allClear: 'सर्व निरीक्षण स्रोत अद्ययावत आहेत आणि कोणतीही मर्यादा ओलांडली नाही।',
+    notConfirmingSafety: (count) =>
+      `हा इशारा सुरक्षेची पुष्टी करत नाही। ${count} इनपुट उपलब्ध नाहीत।`,
+    retrievedAt: (when) => `डेटा ${when} IST रोजी प्राप्त झाला।`,
+  },
+  gu: {
+    header: 'બેવોચ દરિયાકાંઠા ચેતવણી।',
+    riskUnknown: 'જરૂરી ડેટા ઉપલબ્ધ નથી, તેથી દરિયાકાંઠાનું જોખમ અજ્ઞાત છે।',
+    riskIs: (state) => `દરિયાકાંઠાનું જોખમ ${state} છે।`,
+    waveIs: (wave) => `નોંધપાત્ર મોજાની ઊંચાઈ ${wave} છે।`,
+    waveUnavailable: 'નોંધપાત્ર મોજાની ઊંચાઈ હાલમાં ઉપલબ્ધ નથી।',
+    fieldWaveHeight: 'મોજાની ઊંચાઈ',
+    swellIs: (swell) => `ઉછાળાના મોજાની ઊંચાઈ ${swell} છે।`,
+    swellUnavailable: 'ઉછાળાના મોજાની ઊંચાઈ હાલમાં ઉપલબ્ધ નથી।',
+    fieldSwellHeight: 'ઉછાળાના મોજાની ઊંચાઈ',
+    windIs: (wind) => `સતત પવન ${wind} છે।`,
+    windUnavailable: 'પવનની ગતિ હાલમાં ઉપલબ્ધ નથી।',
+    fieldWindSpeed: 'પવનની ગતિ',
+    gustsAre: (gust) => `પવનના ઝાપટા ${gust} છે।`,
+    fieldWindGusts: 'પવનના ઝાપટા',
+    warningActive: 'હાલમાં IMD અથવા INCOIS ની સત્તાવાર ચેતવણી સક્રિય છે।',
+    warningNone: 'આ એપ વાંચી શકે તેવા સત્તાવાર બુલેટિનમાં કોઈ સક્રિય ચેતવણી નથી।',
+    warningUnknown:
+      'IMD અને INCOIS ના સત્તાવાર બુલેટિન વાંચી શકાયા નથી, તેથી ચેતવણી સ્થિતિ અજ્ઞાત છે। ' +
+      'આ સંપૂર્ણ સલામતીની જાહેરાત નથી।',
+    fieldWarningState: 'સત્તાવાર ચેતવણી સ્થિતિ',
+    tsunamiPresent: 'તાજેતરની પ્રાદેશિક ઘટના માટે સત્તાવાર સુનામી ધ્વજ છે।',
+    tsunamiNotFlagged:
+      'USGS એ પ્રાદેશિક ઘટનાઓ માટે બિન-સુનામી ધ્વજ પ્રકાશિત કર્યો છે। આ સુનામીની આગાહી નથી।',
+    tsunamiUnknown: 'સુનામી સ્થિતિ હાલમાં અજ્ઞાત છે।',
+    fieldTsunamiStatus: 'સુનામી સ્થિતિ',
+    qualityIs: (state, assessment) => `ડેટા ગુણવત્તા ${state} છે, મૂલ્યાંકન ${assessment}।`,
+    allClear: 'બધા નિરીક્ષણ સ્ત્રોત વર્તમાન છે અને કોઈ મર્યાદા ઓળંગાઈ નથી।',
+    notConfirmingSafety: (count) =>
+      `આ ચેતવણી સલામતીની પુષ્ટિ કરતી નથી। ${count} ઇનપુટ ઉપલબ્ધ નથી।`,
+    retrievedAt: (when) => `ડેટા ${when} IST પર મેળવવામાં આવ્યો।`,
+  },
+};
+
 /**
  * Build the spoken script from observed state.
  *
@@ -52,87 +230,90 @@ function fmt(value: number | null | undefined, unit: string, digits = 1): string
  * threshold crossing, never substitutes a qualitative adjective for a missing
  * measurement, and never claims an authority has issued or not issued a warning
  * unless we actually read the bulletin.
+ *
+ * `language` selects only the framing sentences (see VOICE_STRINGS). Values,
+ * state labels and timestamps are identical in every language.
  */
 export function buildVoiceScript(args: {
   features: HazardFeatures;
   assessment: CoastalRiskAssessment;
   officialWarnings: readonly OfficialWarningStatus[];
   retrievedAt: string | null;
+  language?: Language;
 }): VoiceScript {
-  const { features, assessment, officialWarnings, retrievedAt } = args;
+  const { features, assessment, officialWarnings, retrievedAt, language = 'en' } = args;
+  const s = VOICE_STRINGS[language] ?? VOICE_STRINGS.en;
   const unavailableFields: string[] = [];
-  const parts: string[] = ['BayWatch coastal alert.'];
+  const parts: string[] = [s.header];
 
   // --- headline state --------------------------------------------------
   const state = assessment.state;
   if (state === 'unknown') {
-    parts.push('Coastal risk state is unknown because required data is unavailable.');
+    parts.push(s.riskUnknown);
   } else {
-    parts.push(`Coastal risk state is ${formatState(state).toLowerCase()}.`);
+    parts.push(s.riskIs(formatState(state).toLowerCase()));
   }
 
   // --- wave height -----------------------------------------------------
   const wave = fmt(features.waveHeightM, ' metres');
   if (wave) {
-    parts.push(`Significant wave height is ${wave}.`);
+    parts.push(s.waveIs(wave));
   } else {
-    parts.push('Significant wave height is currently unavailable.');
-    unavailableFields.push('wave height');
+    parts.push(s.waveUnavailable);
+    unavailableFields.push(s.fieldWaveHeight);
   }
 
   // --- swell -----------------------------------------------------------
   const swell = fmt(features.swellHeightM, ' metres');
   if (swell) {
-    parts.push(`Swell wave height is ${swell}.`);
+    parts.push(s.swellIs(swell));
   } else {
-    parts.push('Swell wave height is currently unavailable.');
-    unavailableFields.push('swell height');
+    parts.push(s.swellUnavailable);
+    unavailableFields.push(s.fieldSwellHeight);
   }
 
   // --- wind ------------------------------------------------------------
   const wind = fmt(features.windSpeedKmh, ' kilometres per hour', 0);
   if (wind) {
-    parts.push(`Sustained wind is ${wind}.`);
+    parts.push(s.windIs(wind));
   } else {
-    parts.push('Wind speed is currently unavailable.');
-    unavailableFields.push('wind speed');
+    parts.push(s.windUnavailable);
+    unavailableFields.push(s.fieldWindSpeed);
   }
 
   const gust = fmt(features.windGustKmh, ' kilometres per hour', 0);
   if (gust) {
-    parts.push(`Wind gusts are ${gust}.`);
+    parts.push(s.gustsAre(gust));
   } else {
-    unavailableFields.push('wind gusts');
+    unavailableFields.push(s.fieldWindGusts);
   }
 
   // --- official warning ------------------------------------------------
   if (assessment.officialWarningActive === true) {
-    parts.push('An official IMD or INCOIS warning is currently active.');
+    parts.push(s.warningActive);
   } else if (assessment.officialWarningActive === false) {
-    parts.push('The official bulletins this application can read report no active warning.');
+    parts.push(s.warningNone);
   } else {
-    // The honest and important case: we could not check.
-    parts.push(
-      'Official IMD and INCOIS bulletins could not be read from this browser, so warning status is unknown.'
-    );
-    unavailableFields.push('official warning state');
+    // The honest and important case: we could not check. The wording names the
+    // outcome, not the mechanism, so it stays accurate whether the blocker was
+    // CORS, an unreachable retriever, or a page that carried no bulletin.
+    parts.push(s.warningUnknown);
+    unavailableFields.push(s.fieldWarningState);
   }
 
   // --- tsunami ---------------------------------------------------------
   if (assessment.tsunamiStatus === true && assessment.tsunamiAuthoritative) {
-    parts.push('An official tsunami flag is present for a recent regional event.');
+    parts.push(s.tsunamiPresent);
   } else if (assessment.tsunamiStatus === false && assessment.tsunamiAuthoritative) {
-    parts.push(
-      'The USGS published a non-tsunami flag for regional events. This is not a tsunami prediction.'
-    );
+    parts.push(s.tsunamiNotFlagged);
   } else {
-    parts.push('Tsunami status is currently unknown.');
-    unavailableFields.push('tsunami status');
+    parts.push(s.tsunamiUnknown);
+    unavailableFields.push(s.fieldTsunamiStatus);
   }
 
   // --- data quality ----------------------------------------------------
   const quality = assessment.quality;
-  parts.push(`Data quality is ${quality.state.toLowerCase()}, assessed ${quality.assessment.toLowerCase()}.`);
+  parts.push(s.qualityIs(quality.state.toLowerCase(), quality.assessment.toLowerCase()));
 
   // --- all-clear gate --------------------------------------------------
   // Only assert safety when EVERY precondition is genuinely met.
@@ -150,16 +331,16 @@ export function buildVoiceScript(args: {
     unavailableFields.length === 0;
 
   if (assertsAllClear) {
-    parts.push('All monitored sources are current and no threshold has been crossed.');
+    parts.push(s.allClear);
   } else if (unavailableFields.length > 0) {
-    parts.push(
-      `This alert does not confirm safety. ${unavailableFields.length} input(s) are unavailable.`
-    );
+    parts.push(s.notConfirmingSafety(unavailableFields.length));
   }
 
   if (retrievedAt) {
-    parts.push(`Data retrieved at ${retrievedAt}.`);
+    parts.push(s.retrievedAt(formatInstantInSourceTimezone(retrievedAt)));
   }
+
+  void officialWarnings;
 
   return {
     text: parts.join(' '),
@@ -193,6 +374,16 @@ export function readVoiceConfig(): { supabaseUrl: string | null; supabaseKey: st
 
 /**
  * Produce playable audio for a script.
+ *
+ * DEPRECATED as a UI path: the single speech engine is `speak()` in
+ * `./speech` (ElevenLabs Edge Function first, browser speech synthesis
+ * second, with per-language voices). New UI must call
+ * `speakVoiceScript()` from `./speech` with the canonical text from
+ * `buildVoiceScript`, so playback, language selection and event-stream
+ * reporting stay in one place.
+ *
+ * Kept (and still tested) because it is a small, dependency-free playback
+ * helper; it is no longer wired to any component.
  *
  * Tries the ElevenLabs Edge Function first, then the browser speech engine.
  * Both are real. If neither is available the caller receives `unavailable`

@@ -25,20 +25,43 @@ function timeAgo(fetchedAt: string | null): string {
   return `${Math.floor(seconds / 60)}m`;
 }
 
+/**
+ * Each row states what the source ACTUALLY supplies and its real integration
+ * state.
+ *
+ * Two corrections are encoded here:
+ *  - IMD and INCOIS are not "not integrated". They ARE contacted on a probe,
+ *    but their bulletins are not readable from a browser (CORS / no
+ *    machine-readable feed), so their warning state is UNKNOWN. Saying "Not
+ *    integrated" while a panel above names both authorities was contradictory.
+ *  - "Degraded" was shown identically for `stale`, `unavailable` and
+ *    `offline`. Those are materially different states, so each is named.
+ */
+const sources: readonly {
+  name: string;
+  desc: string;
+  icon: typeof Cloud;
+  state: 'supplying' | 'probed-unreadable';
+}[] = [
+  { name: 'Open-Meteo Forecast', desc: 'Wind, gusts, rain, visibility', icon: Cloud, state: 'supplying' },
+  { name: 'Open-Meteo Marine', desc: 'Wave height, period, swell', icon: Waves, state: 'supplying' },
+  { name: 'USGS', desc: 'Earthquakes & tsunami flag', icon: Activity, state: 'supplying' },
+  { name: 'IMD', desc: 'Probed — not readable (CORS)', icon: Activity, state: 'probed-unreadable' },
+  { name: 'INCOIS', desc: 'Probed — not readable (CORS)', icon: Globe, state: 'probed-unreadable' },
+];
+
+/** Name the actual freshness state instead of collapsing three into "Degraded". */
+const HEALTH_LABEL: Record<SourceStatus, string> = {
+  live: 'Operational',
+  stale: 'Stale — last read exceeds the live window',
+  unavailable: 'No usable data from the source',
+  offline: 'Offline — device has no network',
+};
+
 export function DataSourcesFooter({ language, fetchedAt, status }: DataSourcesFooterProps) {
   const l = labels[language];
   const healthy = status === 'live';
   const usable = statusHasMeasurements(status);
-
-  const sources = [
-    { name: 'Open-Meteo', desc: 'Weather & Forecast', icon: Cloud, connected: true },
-    { name: 'Open-Meteo Marine', desc: 'Wave Height', icon: Waves, connected: true },
-    { name: 'USGS', desc: 'Earthquake Hazards Program', icon: Activity, connected: true },
-    // Not yet integrated. Listed as pending so the dashboard does not imply
-    // an authority we are not actually reading.
-    { name: 'INCOIS', desc: 'Not integrated', icon: Globe, connected: false },
-    { name: 'IMD', desc: 'Not integrated', icon: Activity, connected: false },
-  ];
 
   return (
     <section className="container py-6">
@@ -52,12 +75,14 @@ export function DataSourcesFooter({ language, fetchedAt, status }: DataSourcesFo
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground">{l.dataUpdated}:</span>
-            <span className="font-semibold text-primary font-mono">{timeAgo(fetchedAt)} {l.ago}</span>
+            <span className="font-semibold text-primary font-mono">
+              {fetchedAt ? `${timeAgo(fetchedAt)} ${l.ago}` : 'never'}
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground">{l.systemHealth}:</span>
             <span className={`font-semibold ${healthy ? 'text-safe' : usable ? 'text-warning' : 'text-muted-foreground'}`}>
-              {healthy ? l.operational : l.degraded}
+              {HEALTH_LABEL[status]}
             </span>
           </div>
         </div>
@@ -70,9 +95,13 @@ export function DataSourcesFooter({ language, fetchedAt, status }: DataSourcesFo
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {sources.map((s) => (
             <div key={s.name} className="flex items-center gap-2 p-2 rounded-lg bg-secondary/50 text-xs">
-              <s.icon className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <s.icon
+                className={`w-3.5 h-3.5 flex-shrink-0 ${s.state === 'supplying' ? 'text-primary' : 'text-muted-foreground'}`}
+              />
               <div>
-                <p className={`font-medium ${s.connected ? 'text-foreground' : 'text-muted-foreground'}`}>{s.name}</p>
+                <p className={`font-medium ${s.state === 'supplying' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  {s.name}
+                </p>
                 <p className="text-muted-foreground text-[10px]">{s.desc}</p>
               </div>
             </div>

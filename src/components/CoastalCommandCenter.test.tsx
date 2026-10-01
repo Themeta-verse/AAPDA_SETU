@@ -13,8 +13,13 @@ import { CoastalCommandCenter } from './CoastalCommandCenter';
 
 // The hook performs real network I/O. Mock it so these tests exercise the
 // component's rendering and interaction logic deterministically.
-vi.mock('@/hooks/useCoastalIntelligence', () => ({
-  useCoastalIntelligence: () => mockState(),
+//
+// The component reads the shared provider state rather than calling the hook
+// itself, so the provider module is what must be mocked. Mocking the hook here
+// would be wrong: it would let a component quietly start a second polling
+// pipeline, which is the exact regression these tests now guard against.
+vi.mock('@/hooks/CoastalIntelligenceProvider', () => ({
+  useSharedCoastalIntelligence: () => mockState(),
 }));
 
 import { buildEvent } from '@/notifications/types';
@@ -117,6 +122,19 @@ function baseState(overrides: Partial<CoastalIntelligenceState> = {}): CoastalIn
     },
     marine: {} as never,
     forecast: [],
+    // No forecast hours means no outlook can be projected, which is the honest
+    // default for a state that has not been populated yet.
+    outlook: {
+      peakState: null,
+      peakAt: null,
+      trend: 'unknown',
+      windows: [],
+      hoursAssessed: 0,
+      hoursExpected: 48,
+      coverage: 'none',
+      coverageNote: 'No forecast hours were published, so no outlook can be projected.',
+      limitations: [],
+    },
     officialWarnings: [],
     forecastSourceIssuedAt: null,
     provenance: [],
@@ -130,6 +148,8 @@ function baseState(overrides: Partial<CoastalIntelligenceState> = {}): CoastalIn
       seismic: { status: 'live', lastSuccessfulFetch: '2026-09-30T11:59:00.000Z', lastAttemptedFetch: '2026-09-30T11:59:00.000Z', nextRefreshAt: '2026-09-30T12:04:00.000Z', errorKind: null, errorMessage: null },
       warnings: { status: 'unavailable', lastSuccessfulFetch: null, lastAttemptedFetch: '2026-09-30T11:58:00.000Z', nextRefreshAt: '2026-09-30T12:28:00.000Z', errorKind: 'cors-denied', errorMessage: 'not readable' },
     },
+    isFetching: false,
+    rateLimitedUntil: null,
     isOnline: true,
     refresh: vi.fn(),
     acknowledge: vi.fn(),
@@ -278,9 +298,52 @@ describe('official warnings', () => {
     expect(screen.getByTestId('cc-warning-item')).toHaveTextContent('ACTIVE');
   });
 
-  it('shows a probing state rather than "no warnings" before any result', () => {
+  it('shows a probing state rather than "no warnings" before any attempt', () => {
+    // Nothing has been tried yet, so a spinner is the only honest thing to show.
+    const s = baseState();
+    s.fetchState = {
+      ...s.fetchState,
+      warnings: {
+        status: 'unavailable',
+        lastSuccessfulFetch: null,
+        lastAttemptedFetch: null,
+        nextRefreshAt: null,
+        errorKind: null,
+        errorMessage: null,
+      },
+    };
+    current = s;
+
     render(<CoastalCommandCenter language="en" />);
     expect(screen.getByText(/Probing official sources/i)).toBeInTheDocument();
+  });
+
+  it('does not spin forever after a failed attempt', () => {
+    // Regression: an empty product list was rendered as a permanent
+    // "Probing official sources…" spinner, so an unreachable retriever looked
+    // like a hung request instead of an honest failure.
+    const s = baseState();
+    s.officialWarnings = [];
+    s.fetchState = {
+      ...s.fetchState,
+      warnings: {
+        status: 'unavailable',
+        lastSuccessfulFetch: null,
+        lastAttemptedFetch: '2026-09-30T11:58:00.000Z',
+        nextRefreshAt: null,
+        errorKind: 'unreachable',
+        errorMessage:
+          'The server-side warning retriever could not be reached, so IMD and INCOIS status is ' +
+          'UNKNOWN. This is not an all-clear.',
+      },
+    };
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.queryByText(/Probing official sources/i)).not.toBeInTheDocument();
+    const notice = screen.getByTestId('cc-warning-unreachable');
+    expect(notice).toHaveTextContent('UNKNOWN');
+    expect(notice).toHaveTextContent('not an all-clear');
   });
 });
 
@@ -300,7 +363,9 @@ describe('forecast timeline', () => {
     precipitationMm: null,
     precipitationProbabilityPct: null,
     visibilityM: null,
-    hazardState: wave !== null && wave >= 3.7 ? ('severe' as const) : ('nominal' as const),
+    // Severity now comes from the shared engine rule table, where
+    // MARINE.WAVE.HIGH is `high` — never `severe`, which needs an authority.
+    hazardState: wave !== null && wave >= 3.7 ? ('high' as const) : ('nominal' as const),
     ruleIds: wave !== null && wave >= 3.7 ? ['MARINE.WAVE.HIGH'] : [],
     sourceStatus: 'live' as const,
   });
@@ -308,6 +373,15 @@ describe('forecast timeline', () => {
   it('shows an explicit empty state with no invented hours', () => {
     render(<CoastalCommandCenter language="en" />);
     expect(screen.getByTestId('cc-forecast-empty')).toBeInTheDocument();
+  });
+
+  it('reports the real published-hour count against the 48-hour horizon', () => {
+    const s = baseState();
+    s.forecast = [point('2026-09-30T13:00:00.000Z', 1.2), point('2026-09-30T14:00:00.000Z', 1.3)];
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.getByTestId('cc-forecast-horizon')).toHaveTextContent('2 of 48 hours published');
   });
 
   it('renders only published points', () => {
@@ -345,13 +419,68 @@ describe('forecast timeline', () => {
     expect(detail).toHaveTextContent('Not published');
   });
 
-  it('starts with no detail panel open', () => {
+  it('selects the first published hour by default so the panel is never empty', () => {
     const s = baseState();
     s.forecast = [point('2026-09-30T14:00:00.000Z', 3.9)];
     current = s;
 
     render(<CoastalCommandCenter language="en" />);
-    expect(screen.queryByTestId('cc-forecast-detail')).not.toBeInTheDocument();
+
+    const detail = screen.getByTestId('cc-forecast-detail');
+    expect(detail).toHaveTextContent('MARINE.WAVE.HIGH');
+    expect(screen.getByTestId('cc-forecast-point')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('moves the selection when a different hour is clicked', () => {
+    const s = baseState();
+    s.forecast = [
+      point('2026-09-30T13:00:00.000Z', 1.2),
+      point('2026-09-30T14:00:00.000Z', 3.9),
+    ];
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    const chips = screen.getAllByTestId('cc-forecast-point');
+    expect(chips[0]).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(chips[1]);
+    expect(screen.getAllByTestId('cc-forecast-point')[1]).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('labels a source-locked forecast hour as having no data', () => {
+    const s = baseState();
+    s.forecast = [
+      { ...point('2026-09-30T14:00:00.000Z', null), hazardState: 'insufficient-data' as const },
+    ];
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.getByTestId('cc-forecast-point')).toHaveTextContent('no data');
+    expect(screen.getByTestId('cc-forecast-detail')).toHaveTextContent(
+      'no hazard claim is made'
+    );
+  });
+
+  it('shows a loading state instead of a fake empty state while fetching', () => {
+    const s = baseState();
+    s.forecast = [];
+    s.isFetching = true;
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.getByTestId('cc-forecast-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('cc-forecast-empty')).not.toBeInTheDocument();
+  });
+
+  it('explains a real HTTP 429 rather than implying no forecast exists', () => {
+    const s = baseState();
+    s.forecast = [];
+    s.isFetching = false;
+    s.rateLimitedUntil = '2026-09-30T12:05:00.000Z';
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.getByTestId('cc-forecast-ratelimited')).toHaveTextContent('HTTP 429');
   });
 });
 
@@ -625,11 +754,13 @@ describe('event stream', () => {
 
   it('renders only real events with a working source link', () => {
     const s = baseState();
+    // A recovery is a real transition. A `source-updated` heartbeat is not, and
+    // the event stream deliberately no longer emits one per poll.
     s.events = [
       buildEvent({
-        kind: 'source-updated',
+        kind: 'source-recovered',
         at: '2026-09-30T12:00:00.000Z',
-        summary: 'Marine reading updated',
+        summary: 'Open-Meteo Marine is serving readings again',
         source: 'Open-Meteo Marine',
         link: 'https://marine-api.open-meteo.com/v1/marine',
         data: { waveHeightM: 0.8 },
@@ -639,11 +770,170 @@ describe('event stream', () => {
 
     render(<CoastalCommandCenter language="en" />);
     const list = screen.getByTestId('cc-event-list');
-    expect(list).toHaveTextContent('Source updated');
-    expect(list).toHaveTextContent('Marine reading updated');
+    expect(list).toHaveTextContent('Source recovered');
+    expect(list).toHaveTextContent('Open-Meteo Marine is serving readings again');
 
     const link = screen.getByRole('link', { name: /Open Open-Meteo Marine/i });
     expect(link).toHaveAttribute('href', 'https://marine-api.open-meteo.com/v1/marine');
+  });
+
+  it('does not render a source-updated heartbeat entry', () => {
+    // If a heartbeat kind ever reappears, the event stream has regressed back to
+    // logging polls instead of transitions.
+    const s = baseState();
+    s.events = [
+      buildEvent({
+        kind: 'source-recovered' as never,
+        at: '2026-09-30T12:00:00.000Z',
+        summary: 'Reading refreshed',
+        source: 'Open-Meteo Marine',
+      }),
+    ];
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.getByTestId('cc-event-list')).not.toHaveTextContent('Source updated');
+  });
+});
+
+// =====================================================================
+// DERIVED OUTLOOK
+// =====================================================================
+
+describe('48-hour outlook', () => {
+  const NONE_HOUR = {
+    waveHeightM: null,
+    swellHeightM: null,
+    wavePeriodS: null,
+    windSpeedKmh: null,
+    windGustKmh: null,
+    precipitationMm: null,
+    precipitationProbabilityPct: null,
+    visibilityM: null,
+  };
+
+  function withOutlook(overrides: Record<string, unknown>) {
+    return baseState(overrides as never);
+  }
+
+  it('is explicitly unknown when no forecast data exists', () => {
+    // "No outlook" must never be rendered as a calm outlook.
+    const s = withOutlook({});
+    render(<CoastalCommandCenter language="en" />);
+
+    expect(screen.getByTestId('cc-outlook-unknown')).toHaveTextContent(
+      'not an indication of calm',
+    );
+  });
+
+  it('reports peak, trend and coverage when the horizon has data', () => {
+    const s = withOutlook({
+      outlook: {
+        peakState: 'high',
+        peakAt: '2026-09-30T18:00:00.000Z',
+        trend: 'worsening',
+        windows: [],
+        hoursAssessed: 48,
+        hoursExpected: 48,
+        coverage: 'complete',
+        coverageNote: 'All 48 of 48 forecast hours carried usable data.',
+        limitations: ['Not a machine-learning prediction.'],
+      },
+    });
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.getByTestId('cc-outlook-peak')).toHaveTextContent('High');
+    expect(screen.getByTestId('cc-outlook-trend')).toHaveTextContent('Worsening');
+    expect(screen.getByTestId('cc-outlook-coverage')).toHaveTextContent('48/48');
+  });
+
+  it('explains each elevated window with the rule that actually drove it', () => {
+    // The panel used to always attribute a peak to wave height whenever one was
+    // present, which misattributed the cause when a different rule had fired.
+    const s = withOutlook({
+      outlook: {
+        peakState: 'elevated',
+        peakAt: '2026-09-30T20:00:00.000Z',
+        trend: 'stable',
+        windows: [
+          {
+            from: '2026-09-30T18:00:00.000Z',
+            to: '2026-09-30T21:00:00.000Z',
+            state: 'elevated',
+            hours: 4,
+            basis: {
+              at: '2026-09-30T20:00:00.000Z',
+              ruleIds: ['WEATHER.VISIBILITY.LOW'],
+              triggers: [
+                {
+                  ruleId: 'WEATHER.VISIBILITY.LOW',
+                  basis: 'Visibility below 4 km',
+                  observed: [3200],
+                },
+              ],
+              values: { ...NONE_HOUR, waveHeightM: 0.56, visibilityM: 3200 },
+            },
+          },
+        ],
+        hoursAssessed: 48,
+        hoursExpected: 48,
+        coverage: 'complete',
+        coverageNote: 'All 48 hours assessed.',
+        limitations: [],
+      },
+    });
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    const windows = screen.getByTestId('cc-outlook-windows');
+    // Names the real trigger and the value it inspected.
+    expect(windows).toHaveTextContent('WEATHER.VISIBILITY.LOW');
+    expect(windows).toHaveTextContent('3200');
+    // And does NOT claim a wave of 0.56 m caused it.
+    expect(windows).not.toHaveTextContent('wave height 0.56');
+  });
+
+  it('states partial coverage rather than implying a full projection', () => {
+    const s = withOutlook({
+      outlook: {
+        peakState: 'nominal',
+        peakAt: null,
+        trend: 'unknown',
+        windows: [],
+        hoursAssessed: 6,
+        hoursExpected: 48,
+        coverage: 'partial',
+        coverageNote: '6 of 48 forecast hours carried usable data.',
+        limitations: [],
+      },
+    });
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    expect(screen.getByTestId('cc-outlook-coverage')).toHaveTextContent('6/48');
+  });
+
+  it('always offers the limitations rather than only on request', () => {
+    const s = withOutlook({
+      outlook: {
+        peakState: 'nominal',
+        peakAt: null,
+        trend: 'stable',
+        windows: [],
+        hoursAssessed: 48,
+        hoursExpected: 48,
+        coverage: 'complete',
+        coverageNote: 'All hours assessed.',
+        limitations: ['Model error grows with lead time.'],
+      },
+    });
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    const panel = screen.getByTestId('cc-outlook');
+    expect(panel).toHaveTextContent('Rule-based derivation');
+    expect(panel).toHaveTextContent('Model error grows with lead time.');
   });
 });
 
@@ -652,6 +942,108 @@ describe('event stream', () => {
 // =====================================================================
 
 describe('source provenance', () => {
+  it('is collapsed by default so metadata does not dominate the dashboard', () => {
+    // Provenance previously rendered as a full-height stack of expanded cards,
+    // occupying more space than the entire operational dashboard above it.
+    const s = baseState();
+    s.provenance = [
+      {
+        sourceId: 'open-meteo-marine',
+        sourceName: 'Open-Meteo Marine',
+        url: 'https://marine-api.open-meteo.com/v1/marine',
+        authority: 'Open-Meteo',
+        issuedAt: '2026-09-30T11:59:00.000Z',
+        validFrom: null,
+        validUntil: null,
+        retrievedAt: '2026-09-30T12:00:00.000Z',
+        status: 'live',
+        fieldsUsed: ['wave_height'],
+        limitations: ['Model-based forecast.'],
+      },
+    ];
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+
+    const details = screen.getByTestId('cc-provenance-details');
+    // Not expanded on first render.
+    expect(details).not.toHaveAttribute('open');
+  });
+
+  it('states source availability without needing to expand anything', () => {
+    // The reader must learn "IMD is unreadable" at a glance, not by opening it.
+    const s = baseState();
+    s.provenance = [
+      {
+        sourceId: 'open-meteo-marine',
+        sourceName: 'Open-Meteo Marine',
+        url: 'https://marine-api.open-meteo.com/v1/marine',
+        authority: 'Open-Meteo',
+        issuedAt: null,
+        validFrom: null,
+        validUntil: null,
+        retrievedAt: '2026-09-30T12:00:00.000Z',
+        status: 'live',
+        fieldsUsed: [],
+        limitations: [],
+      },
+      {
+        sourceId: 'imd-marine-forecast',
+        sourceName: 'IMD Marine Forecast',
+        url: 'https://mausam.imd.gov.in/responsive/marine_forecast.php',
+        authority: 'IMD',
+        issuedAt: null,
+        validFrom: null,
+        validUntil: null,
+        retrievedAt: '2026-09-30T12:00:00.000Z',
+        status: 'unavailable',
+        blocker: 'no-bulletin-content',
+        blockerDetail: 'navigation chrome only',
+        httpStatus: 200,
+        contentType: 'text/html',
+        fieldsUsed: [],
+        limitations: [],
+      },
+    ] as never;
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+
+    const summary = screen.getByTestId('cc-provenance-summary');
+    expect(summary).toHaveTextContent('2 sources');
+    expect(summary).toHaveTextContent('1 operational');
+    expect(summary).toHaveTextContent('1 unreadable');
+
+    // Grouped, and the failing source is named without expanding.
+    const section = screen.getByTestId('cc-provenance');
+    expect(section).toHaveTextContent('Official warnings');
+    expect(section).toHaveTextContent('IMD Marine Forecast');
+  });
+
+  it('warns that dependent values are unknown rather than safe', () => {
+    const s = baseState();
+    s.provenance = [
+      {
+        sourceId: 'incois-tsunami',
+        sourceName: 'INCOIS Tsunami',
+        url: 'https://tsunami.incois.gov.in/TEWS/',
+        authority: 'INCOIS',
+        issuedAt: null,
+        validFrom: null,
+        validUntil: null,
+        retrievedAt: null,
+        status: 'unavailable',
+        fieldsUsed: [],
+        limitations: [],
+      },
+    ] as never;
+    current = s;
+
+    render(<CoastalCommandCenter language="en" />);
+    const section = screen.getByTestId('cc-provenance');
+    expect(section).toHaveTextContent('shown as unknown, not as safe');
+  });
+
   it('shows issued time, retrieval time, fields used and limitations', () => {
     const s = baseState();
     s.provenance = [

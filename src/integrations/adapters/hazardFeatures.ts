@@ -7,15 +7,15 @@
  * about it.
  */
 
-import { isRecord, validateField, validateTimestamp } from './adapters/validation';
+import { isRecord, validateField, validateTimestamp } from './validation';
 import type {
   AdapterDeps,
   MarineHourlyPoint,
   NormalizedMarine,
   SourceError,
   SourceStatus,
-} from './adapters/types';
-import { emptyHazardFeatures, type HazardFeatures } from '../risk/engine';
+} from './types';
+import { emptyHazardFeatures, type HazardFeatures } from '@/risk/engine';
 
 /**
  * Ranges used to reject impossible values.
@@ -63,9 +63,15 @@ const FEATURE_LABELS: Partial<Record<keyof HazardFeatures, string>> = {
 /**
  * Extract the current-condition hazard features.
  *
- * `marineExtra` holds the swell/current/SST fields, which the existing
- * `NormalizedMarine` type does not yet carry. They are read from the same
- * marine payload the adapter already fetched, so no extra request is made.
+ * Sea-state fields now live on the normalized `NormalizedMarine` reading
+ * itself, because the marine URL requests them explicitly. The previous design
+ * read swell/current/SST from a separate `marineExtra` channel that the URL
+ * never populated, so those features were permanently null while the
+ * provenance panel listed them as fields in use.
+ *
+ * `weatherExtra` remains an optional channel for atmospheric variables that are
+ * not part of the current-conditions contract. It is null in production; every
+ * field it would supply is also available on the normalized reading.
  */
 export function extractHazardFeatures(
   marine: NormalizedMarine,
@@ -84,7 +90,11 @@ export function extractHazardFeatures(
       missing.push(FEATURE_LABELS[key] ?? key);
       return;
     }
-    (features as Record<string, number | null>)[key] = value;
+    // `key` is narrowed to the numeric hazard features by the `set` signature,
+    // so the write is safe. The cast goes through `unknown` because
+    // `HazardFeatures` has no index signature; writing through a typed local
+    // avoids loosening the shared interface for one assignment site.
+    (features as unknown as Record<string, number | null>)[key] = value;
   };
 
   // Marine, from the already-normalized reading.
@@ -94,18 +104,32 @@ export function extractHazardFeatures(
   set('wavePeriodS', marine.wavePeriod, HAZARD_RANGES.wavePeriodS);
   set('waveDirectionDeg', marine.waveDirection, HAZARD_RANGES.directionDeg);
 
-  // Marine extras, read from the same payload.
+  // Marine extras. The normalized reading is authoritative; `marineExtra` is
+  // consulted only if the field is absent there, so an older caller that still
+  // passes raw extras keeps working.
   const extra = isRecord(marineExtra) ? marineExtra : {};
-  set('swellHeightM', validateField(extra.swell_wave_height, HAZARD_RANGES.swellHeightM), HAZARD_RANGES.swellHeightM);
-  set('swellDirectionDeg', validateField(extra.swell_wave_direction, HAZARD_RANGES.directionDeg), HAZARD_RANGES.directionDeg);
+  set(
+    'swellHeightM',
+    marine.swellHeight ??
+      validateField(extra.swell_wave_height, HAZARD_RANGES.swellHeightM),
+    HAZARD_RANGES.swellHeightM
+  );
+  set(
+    'swellDirectionDeg',
+    marine.swellDirection ??
+      validateField(extra.swell_wave_direction, HAZARD_RANGES.directionDeg),
+    HAZARD_RANGES.directionDeg
+  );
   set(
     'oceanCurrentVelocity',
-    validateField(extra.ocean_current_velocity, HAZARD_RANGES.oceanCurrentVelocity),
+    marine.oceanCurrentVelocity ??
+      validateField(extra.ocean_current_velocity, HAZARD_RANGES.oceanCurrentVelocity),
     HAZARD_RANGES.oceanCurrentVelocity
   );
   set(
     'seaSurfaceTemperatureC',
-    validateField(extra.sea_surface_temperature, HAZARD_RANGES.seaSurfaceTemperatureC),
+    marine.seaSurfaceTemperature ??
+      validateField(extra.sea_surface_temperature, HAZARD_RANGES.seaSurfaceTemperatureC),
     HAZARD_RANGES.seaSurfaceTemperatureC
   );
 
@@ -151,10 +175,16 @@ export interface ForecastPoint {
   precipitationProbabilityPct: number | null;
   visibilityM: number | null;
   /**
-   * Hazard state for this hour, from the SAME rule set used for the current
-   * state. Computed per-point so the timeline and the headline agree.
+   * Hazard state for this hour, evaluated by the risk engine's SHARED rule
+   * table via `evaluateForecastHour`.
+   *
+   * `severe` is deliberately absent from this union: it is reserved for an
+   * official authority or a confirmed tsunami flag, neither of which is a
+   * per-hour model output. The previous local implementation could return
+   * `severe` for a 3.7 m wave hour while the same rule was `high` in the
+   * engine, so the timeline showed red while the headline showed amber.
    */
-  hazardState: 'nominal' | 'elevated' | 'high' | 'severe' | 'insufficient-data';
+  hazardState: 'nominal' | 'elevated' | 'high' | 'insufficient-data';
   /** Rule ids that fired at this point. */
   ruleIds: string[];
   /** Freshness of the source that supplied this point. */
@@ -175,7 +205,14 @@ export interface ForecastPayloadLike {
 
 /** One aligned reading from the source's parallel arrays. */
 interface RawPoint {
+  /** Source-local timestamp exactly as published, e.g. `2026-10-01T09:00`. */
   time: string;
+  /**
+   * The same instant as a true UTC ISO-8601 string, corrected by the source's
+   * `utc_offset_seconds`. Keeping both lets the UI render the source's own
+   * local time while still comparing and sorting instants correctly.
+   */
+  isoTime: string;
   values: Record<string, number | null>;
 }
 

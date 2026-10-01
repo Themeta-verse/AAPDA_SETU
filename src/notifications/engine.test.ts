@@ -207,8 +207,35 @@ describe('deduplication', () => {
     expect(notifications).toHaveLength(1);
   });
 
-  it('preserves createdAt from the FIRST observation, not the latest poll', () => {
-    const first = dedupeNotifications([], [candidate('A')], '2026-09-30T12:00:00Z');
+  it('does not flap when risk oscillates watch -> unknown -> watch', () => {
+    // This is the exact pattern that made the old event stream useless:
+    // "watch -> unknown", "unknown -> watch", "watch -> unknown", forever.
+    // A persistent condition must not re-notify as the state wobbles around it.
+    const flapping: string[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      flapping.push(i % 2 === 0 ? 'RISK_ESCALATED:nominal->watch' : 'RISK_ESCALATED:unknown->watch');
+    }
+
+    let notifications: BayWatchNotification[] = [];
+    flapping.forEach((key, index) => {
+      notifications = dedupeNotifications(notifications, [candidate(key)], `2026-09-30T12:${index}:00Z`);
+    });
+
+    // One notification per distinct real transition, not one per poll.
+    expect(notifications).toHaveLength(2);
+  });
+
+  it('does not notify on a transition out of and back into unknown', () => {
+    // Returning to a known state is not an escalation, so nothing is raised.
+    const candidates = evaluateNotificationRules({
+      ...input(),
+      riskState: 'unknown',
+      previousRiskState: 'watch',
+    });
+    expect(candidates.map((c) => c.rule)).not.toContain('RISK_ESCALATED');
+  });
+
+  it('preserves createdAt from the FIRST observation, not the latest poll', () => {    const first = dedupeNotifications([], [candidate('A')], '2026-09-30T12:00:00Z');
     const second = dedupeNotifications(first, [candidate('A')], '2026-09-30T12:09:00Z');
     expect(second[0].createdAt).toBe('2026-09-30T12:00:00Z');
   });

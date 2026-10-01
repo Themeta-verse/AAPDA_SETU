@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, ChevronDown, Check } from 'lucide-react';
-import { type Language, languageNames, stopSpeaking } from '@/lib/translations';
+import { type Language, languageNames } from '@/lib/translations';
+import { stopSpeech } from '@/voice/speech';
 
 interface LanguageSelectorProps {
   language: Language;
@@ -22,8 +23,10 @@ export function LanguageSelector({ language, onChange }: LanguageSelectorProps) 
   const langs = Object.entries(languageNames) as [Language, string][];
 
   const handleChange = (code: Language) => {
-    // Stop any ongoing speech when language changes
-    stopSpeaking();
+    // Switching language must not leave an utterance running in the old
+    // language. Uses the single shared speech engine so both the ElevenLabs
+    // element and the browser synthesis are stopped.
+    stopSpeech();
     onChange(code);
     setOpen(false);
     setShowConfirm(true);
