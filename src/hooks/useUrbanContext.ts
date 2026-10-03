@@ -7,9 +7,12 @@ import {
   DEFAULT_SAFE_LOCATIONS,
   type UrbanCity,
   type UrbanZone,
+  type UrbanZoneType,
   type SafeLocation,
+  type LocationType,
   type UrbanContext,
   findNearestZone,
+  findZoneContaining,
   findNearestSafeLocation,
   calculateDistanceKm,
 } from '@/lib/urbanContext';
@@ -62,20 +65,20 @@ export function useUrbanContext() {
         .eq('is_active', true);
 
       if (Array.isArray(dbZones) && dbZones.length > 0) {
-        const mappedZones: UrbanZone[] = dbZones.map((z: any) => ({
-          id: z.id,
-          name: z.name,
-          city: z.city || 'Mumbai',
-          ward: z.ward || null,
-          zoneType: z.zone_type || (z.is_coastal ? 'coastal' : 'inland_flood'),
+        const mappedZones: UrbanZone[] = dbZones.map((z: Record<string, unknown>) => ({
+          id: z.id as string,
+          name: z.name as string,
+          city: (z.city as string) || 'Mumbai',
+          ward: (z.ward as string) || null,
+          zoneType: (z.zone_type as UrbanZoneType) || (z.is_coastal ? 'coastal' : 'inland_flood'),
           isCoastal: typeof z.is_coastal === 'boolean' ? z.is_coastal : true,
-          centerLat: z.center_lat,
-          centerLon: z.center_lon,
-          radiusKm: z.radius_km || 4.0,
-          alertThresholdKm: z.alert_threshold_km || 2.5,
-          severityThreshold: z.severity_threshold || 'high',
-          eventTypes: Array.isArray(z.event_types) ? z.event_types : ['flood'],
-          isActive: z.is_active,
+          centerLat: z.center_lat as number,
+          centerLon: z.center_lon as number,
+          radiusKm: (z.radius_km as number) || 4.0,
+          alertThresholdKm: (z.alert_threshold_km as number) || 2.5,
+          severityThreshold: (z.severity_threshold as 'moderate' | 'high' | 'critical') || 'high',
+          eventTypes: Array.isArray(z.event_types) ? (z.event_types as string[]) : ['flood'],
+          isActive: z.is_active as boolean,
         }));
         setZones(mappedZones);
       }
@@ -87,18 +90,18 @@ export function useUrbanContext() {
         .eq('is_active', true);
 
       if (Array.isArray(dbLocations) && dbLocations.length > 0) {
-        const mappedLocations: SafeLocation[] = dbLocations.map((l: any) => ({
-          id: l.id,
-          zoneId: l.zone_id,
-          city: l.city || 'Mumbai',
-          name: l.name,
-          locationType: l.location_type,
-          address: l.address,
-          latitude: l.latitude,
-          longitude: l.longitude,
-          capacity: l.capacity,
-          contactNumber: l.contact_number,
-          isActive: l.is_active,
+        const mappedLocations: SafeLocation[] = dbLocations.map((l: Record<string, unknown>) => ({
+          id: l.id as string,
+          zoneId: (l.zone_id as string) || null,
+          city: (l.city as string) || 'Mumbai',
+          name: l.name as string,
+          locationType: l.location_type as LocationType,
+          address: (l.address as string) || null,
+          latitude: l.latitude as number,
+          longitude: l.longitude as number,
+          capacity: (l.capacity as number) || null,
+          contactNumber: (l.contact_number as string) || null,
+          isActive: l.is_active as boolean,
         }));
         setSafeLocations(mappedLocations);
       }
@@ -152,28 +155,49 @@ export function useUrbanContext() {
   // Enable / disable GPS tracking
   const toggleGps = useCallback(() => {
     if (!isGpsActive && gpsPosition) {
-      // Find nearest zone to GPS
-      const nearest = findNearestZone(gpsPosition.latitude, gpsPosition.longitude, zones);
-      if (nearest) {
-        updateSelection(nearest.zone.city, nearest.zone.id, true);
+      // Find zone CONTAINING GPS coordinates (within radiusKm)
+      const containing = findZoneContaining(gpsPosition.latitude, gpsPosition.longitude, zones);
+      if (containing) {
+        updateSelection(containing.zone.city, containing.zone.id, true);
         return;
       }
+      // GPS coordinates don't fall inside any configured risk zone
+      // Keep GPS active but with no zone context
+      updateSelection(selectedCityName, null, true);
+      return;
     }
     setIsGpsActive(!isGpsActive);
-  }, [isGpsActive, gpsPosition, zones, updateSelection]);
+  }, [isGpsActive, gpsPosition, zones, updateSelection, selectedCityName]);
 
   // Derived current urban context
   const currentContext: UrbanContext = useMemo(() => {
     // If GPS is active and coordinates exist
     if (isGpsActive && gpsPosition) {
-      const nearest = findNearestZone(gpsPosition.latitude, gpsPosition.longitude, zones);
+      const containing = findZoneContaining(gpsPosition.latitude, gpsPosition.longitude, zones);
+      if (containing) {
+        return {
+          city: containing.zone.city,
+          ward: containing.zone.ward,
+          zoneId: containing.zone.id,
+          zoneName: `${containing.zone.name} (GPS Inside Zone)`,
+          isCoastal: containing.zone.isCoastal,
+          zoneType: containing.zone.zoneType,
+          latitude: gpsPosition.latitude,
+          longitude: gpsPosition.longitude,
+          source: 'gps',
+          confidence: 'exact',
+        };
+      }
+      // GPS active but NOT inside any configured risk zone
+      // Use city default coordinates but mark as no zone
+      const cityDefault = CONFIGURED_CITIES.find(c => c.name.toLowerCase() === selectedCityName.toLowerCase()) || CONFIGURED_CITIES[0];
       return {
-        city: nearest ? nearest.zone.city : selectedCityName,
-        ward: nearest ? nearest.zone.ward : null,
-        zoneId: nearest ? nearest.zone.id : null,
-        zoneName: nearest ? `${nearest.zone.name} (Nearest to GPS)` : 'Current Location',
-        isCoastal: nearest ? nearest.zone.isCoastal : true,
-        zoneType: nearest ? nearest.zone.zoneType : 'general',
+        city: cityDefault.name,
+        ward: null,
+        zoneId: null,
+        zoneName: 'GPS Location (No Configured Risk Zone)',
+        isCoastal: cityDefault.isCoastal,
+        zoneType: 'general',
         latitude: gpsPosition.latitude,
         longitude: gpsPosition.longitude,
         source: 'gps',
@@ -237,7 +261,16 @@ export function useUrbanContext() {
     setCity,
     setZone,
     toggleGps,
-    calculateDistanceToCenter: (lat: number, lon: number) =>
-      calculateDistanceKm(lat, lon, currentContext.latitude, currentContext.longitude),
+    calculateDistanceToCenter: (lat: number, lon: number) => {
+      const centerLat = currentContext.latitude;
+      const centerLon = currentContext.longitude;
+      if (
+        typeof centerLat !== 'number' || !Number.isFinite(centerLat) ||
+        typeof centerLon !== 'number' || !Number.isFinite(centerLon)
+      ) {
+        return null;
+      }
+      return calculateDistanceKm(lat, lon, centerLat, centerLon);
+    },
   };
 }

@@ -28,10 +28,15 @@ import { WaveForecast } from '@/components/WaveForecast';
 import { EmergencyBroadcastBanner } from '@/components/EmergencyBroadcastBanner';
 import { LocationTracker } from '@/components/LocationTracker';
 import { CitizenReporting } from '@/components/CitizenReporting';
+import { CitizenSOS } from '@/components/CitizenSOS';
 import { IncidentIntelligence } from '@/components/IncidentIntelligence';
 import { ResourceCommandCenter } from '@/components/ResourceCommandCenter';
 import { OperationalUserManagement } from '@/components/OperationalUserManagement';
 import { DataSourcesFooter } from '@/components/DataSourcesFooter';
+import { DeterministicFloodAssessment } from '@/components/DeterministicFloodAssessment';
+import { assessUrbanFloodRisk } from '@/lib/floodIntelligence';
+import { useIncidents } from '@/hooks/useIncidents';
+import { useResources } from '@/hooks/useResources';
 import { LogOut, User, Bell, CheckCircle, AlertCircle, FlaskConical, RefreshCw, Wifi, WifiOff, Clock, Upload, Shield, Radio } from 'lucide-react';
 
 const Index = () => {
@@ -49,12 +54,19 @@ const Index = () => {
 const IndexContent = () => {
   const [language, setLanguage] = useState<Language>('en');
   const urban = useUrbanContext();
-  const { data, alerts, clock, marine, earthquakes, sourceStatus, assessment, tsunamiRisk } = useMonitoring(8000);
+  const monitoringCoords = { latitude: urban.context.latitude, longitude: urban.context.longitude };
+  const { data, alerts, clock, marine, earthquakes, sourceStatus, assessment, tsunamiRisk } = useMonitoring(
+    8000,
+    monitoringCoords,
+    urban.context.isCoastal
+  );
   const { user, loading: authLoading, signOut } = useAuth();
   const { role, isOperational, isResolving } = useAppRole(user);
   const { isMonitoring, lastAlertSent, lastAlertEvent, lastAlertTestMode, error: smsError, clearError, testSMSAlert, riskZones } = useSMSAlert();
   const { isOnline, status: connectionStatus } = useNetworkStatus();
   const { stats: queueStats } = useOfflineIncidentQueue();
+  const { incidents } = useIncidents(user, { enabled: isOperational });
+  const { resources } = useResources({ user, enabled: isOperational });
   const alertsRef = useRef<HTMLDivElement>(null);
   const [activeScenario, setActiveScenario] = useState<ScenarioType>(null);
   // Role-specific workspace state:
@@ -136,6 +148,89 @@ const IndexContent = () => {
   const displayLocation = urban.context.zoneName
     ? `${urban.context.zoneName} (${urban.context.city})`
     : urban.context.city;
+
+  // Operational incident queries & resources
+  const verifiedIncidents = incidents.filter((i) => i.status === 'verified');
+
+  const verifiedIncidentsInZone = verifiedIncidents
+    .filter((i) => {
+      if (!i.hasCoordinates || i.latitude === null || i.longitude === null) return false;
+      const dLat = Math.abs(i.latitude - urban.context.latitude);
+      const dLon = Math.abs(i.longitude - urban.context.longitude);
+      return dLat * dLat + dLon * dLon < 0.05 * 0.05;
+    })
+    .map((i) => ({ id: i.id, type: i.type, createdAt: i.createdAt }));
+
+  const floodAssessment = assessUrbanFloodRisk({
+    location: {
+      city: urban.context.city,
+      ward: urban.context.ward,
+      zoneId: urban.context.zoneId,
+      zoneName: urban.context.zoneName || urban.context.city,
+      latitude: urban.context.latitude,
+      longitude: urban.context.longitude,
+      isCoastal: urban.context.isCoastal,
+    },
+    weather: {
+      fetchedAt: marine.fetchedAt,
+      status: marine.status,
+      current: {
+        rainProbability: marine.rainProbability ?? null,
+        windSpeed: marine.windSpeed ?? null,
+        temperature: marine.temperature ?? null,
+      },
+      hourly: marine.hourlyWeather?.map((h) => ({
+        time: h.time,
+        rainProbability: h.rainProbability,
+        precipitation: h.precipitation,
+        windSpeed: h.windSpeed,
+      })),
+    },
+    marine: urban.context.isCoastal
+      ? {
+          fetchedAt: marine.fetchedAt,
+          status: marine.status,
+          current: {
+            waveHeight: marine.waveHeight ?? null,
+            wavePeriod: marine.wavePeriod ?? null,
+            waveDirection: marine.waveDirection ?? null,
+          },
+          hourly: marine.hourly?.map((h) => ({ time: h.time, waveHeight: h.waveHeight })),
+        }
+      : null,
+    tsunamiRisk: tsunamiRisk === true,
+    verifiedIncidentsInZone,
+  });
+
+  const mapRiskZones = riskZones.map((z) => ({
+    id: z.id,
+    name: z.name,
+    city: urban.context.city,
+    ward: urban.context.ward || null,
+    centerLat: z.center_lat,
+    centerLon: z.center_lon,
+    radiusKm: z.radius_km,
+    isCoastal: urban.context.isCoastal,
+  }));
+
+  const mapVerifiedIncidents = verifiedIncidents.map((i) => ({
+    id: i.id,
+    type: i.type,
+    latitude: i.latitude,
+    longitude: i.longitude,
+    description: i.description,
+    status: i.status,
+  }));
+
+  const mapResources = resources.map((r) => ({
+    id: r.id,
+    name: r.name,
+    resourceType: r.resourceType,
+    status: r.status,
+    latitude: r.latitude ?? null,
+    longitude: r.longitude ?? null,
+    quantity: r.quantity,
+  }));
 
   return (
     <div className="min-h-screen bg-background">
@@ -430,9 +525,21 @@ const IndexContent = () => {
           )}
 
           {/* Incident Intelligence */}
-          <IncidentIntelligence language={language} user={user} />
+          <div id="incident-command-panel">
+            <IncidentIntelligence language={language} user={user} />
+          </div>
 
-          {/* Evacuation Map */}
+          {/* Deterministic Forecast-Based Urban Flood-Risk Intelligence */}
+          <DeterministicFloodAssessment
+            assessment={floodAssessment}
+            language={language}
+            onNavigateToCommand={() => {
+              const el = document.getElementById('incident-command-panel');
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+          />
+
+          {/* Evacuation Map with Multi-Layer Spatial Intelligence */}
           <EvacuationMap
             language={language}
             zoneName={urban.context.zoneName}
@@ -442,6 +549,10 @@ const IndexContent = () => {
             centerLon={urban.context.longitude}
             isCoastal={urban.context.isCoastal}
             safeLocations={urban.safeLocations}
+            verifiedIncidents={mapVerifiedIncidents}
+            resources={mapResources}
+            riskZones={mapRiskZones}
+            userGpsLocation={urban.isGpsActive ? { latitude: urban.context.latitude, longitude: urban.context.longitude } : null}
           />
 
           {/* Emergency Contacts */}
@@ -459,6 +570,11 @@ const IndexContent = () => {
             locationName={displayLocation}
           />
 
+          {/* FEATURE 2: Citizen Emergency SOS Beacon */}
+          <div className="container py-4">
+            <CitizenSOS language={language} userId={user?.id} />
+          </div>
+
           <MonitoringDashboard
             data={activeData}
             language={language}
@@ -468,6 +584,9 @@ const IndexContent = () => {
             locationName={displayLocation}
             isCoastal={urban.context.isCoastal}
           />
+
+          {/* Deterministic Forecast-Based Urban Flood-Risk Intelligence */}
+          <DeterministicFloodAssessment assessment={floodAssessment} language={language} />
 
           {/* GPS Location & Distance */}
           <LocationTracker
@@ -509,6 +628,9 @@ const IndexContent = () => {
             centerLon={urban.context.longitude}
             isCoastal={urban.context.isCoastal}
             safeLocations={urban.safeLocations}
+            verifiedIncidents={mapVerifiedIncidents}
+            riskZones={mapRiskZones}
+            userGpsLocation={urban.isGpsActive ? { latitude: urban.context.latitude, longitude: urban.context.longitude } : null}
           />
 
           {/* Citizen Reporting */}

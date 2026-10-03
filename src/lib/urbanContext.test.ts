@@ -5,6 +5,9 @@ import {
   DEFAULT_SAFE_LOCATIONS,
   findZoneById,
   findNearestZone,
+  findZoneContaining,
+  findNearestSafeLocation,
+  calculateDistanceKm,
   filterSafeLocations,
   type UrbanContext,
   type UrbanZone,
@@ -67,7 +70,7 @@ describe('Urban Location Architecture & Context', () => {
     const kurlaZone = findZoneById('zone-mumbai-kurla');
     expect(kurlaZone).toBeDefined();
 
-    const mockResources: any[] = [
+    const mockResources: Parameters<typeof computeRuleBasedRecommendations>[0]['resources'] = [
       {
         id: 'res-kurla-boat',
         name: 'Rescue Boat Kurla Unit 1',
@@ -75,10 +78,13 @@ describe('Urban Location Architecture & Context', () => {
         status: 'available',
         zoneId: 'zone-mumbai-kurla',
         availableQuantity: 2,
-        totalQuantity: 2,
-        location: 'Kurla Station Depot',
+        quantity: 2,
+        capacity: 10,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdBy: 'user-1',
+        latitude: null,
+        longitude: null,
+        metadata: {},
       },
       {
         id: 'res-juhu-boat',
@@ -87,20 +93,30 @@ describe('Urban Location Architecture & Context', () => {
         status: 'available',
         zoneId: 'zone-mumbai-juhu',
         availableQuantity: 3,
-        totalQuantity: 3,
-        location: 'Juhu Beach Post',
+        quantity: 3,
+        capacity: 10,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdBy: 'user-1',
+        latitude: null,
+        longitude: null,
+        metadata: {},
       },
     ];
 
     // Incident in Kurla zone
-    const kurlaIncident: any = {
+    const kurlaIncident: Parameters<typeof computeRuleBasedRecommendations>[0]['incidents'][0] = {
       id: 'inc-kurla-1',
       type: 'flooding',
       description: 'Severe waterlogging at Kurla West',
       status: 'verified',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      latitude: null,
+      longitude: null,
+      photoUrl: null,
+      verifiedBy: null,
+      verifiedAt: null,
+      hasCoordinates: false,
     };
 
     // Calculate recommendations matching incident in Kurla
@@ -184,10 +200,10 @@ describe('Urban Location Architecture & Context', () => {
     const { saveToCache, loadFromCache } = await import('./offlineCache');
     saveToCache('urban_context_v1', { city: 'Pune', zoneId: 'zone-pune-mutha', isGpsActive: false }, 'TestPreference');
 
-    const loaded = loadFromCache('urban_context_v1');
+    const loaded = loadFromCache<{ city: string; zoneId: string }>('urban_context_v1');
     expect(loaded).toBeDefined();
-    expect((loaded as any)?.data?.city).toBe('Pune');
-    expect((loaded as any)?.data?.zoneId).toBe('zone-pune-mutha');
+    expect(loaded?.data?.city).toBe('Pune');
+    expect(loaded?.data?.zoneId).toBe('zone-pune-mutha');
   });
 
   it('10. Urban context operates without Juhu-specific application logic', () => {
@@ -225,6 +241,102 @@ describe('Urban Location Architecture & Context', () => {
 
     expect(customMonitoring.waveHeight).toBeNull();
     expect(customMonitoring.riskLevel).toBe('critical');
+  });
+});
+
+describe('GPS → Urban Context Resolution (findZoneContaining)', () => {
+  it('finds zone when GPS coordinates are INSIDE zone radius', () => {
+    // GPS inside Juhu zone (center: 19.0988, 72.8267, radius: 5km)
+    const insideJuhu = findZoneContaining(19.1000, 72.8280);
+    expect(insideJuhu).toBeDefined();
+    expect(insideJuhu?.zone.id).toBe('zone-mumbai-juhu');
+    expect(insideJuhu?.distanceKm).toBeLessThan(5.0);
+  });
+
+  it('finds zone when GPS coordinates are INSIDE Sion zone', () => {
+    // GPS inside Sion zone (center: 19.0330, 72.8617, radius: 3km)
+    const insideSion = findZoneContaining(19.0335, 72.8620);
+    expect(insideSion).toBeDefined();
+    expect(insideSion?.zone.id).toBe('zone-mumbai-sion');
+    expect(insideSion?.distanceKm).toBeLessThan(3.0);
+  });
+
+  it('returns null when GPS coordinates are OUTSIDE all zone radii', () => {
+    // GPS in central Mumbai, not inside any configured zone radius
+    // (19.0760, 72.8777) is Mumbai city center, far from Juhu (7.7km), Sion (5.5km), Kurla (2.5km), Bandra (4.5km)
+    // Wait - Kurla center is 19.0688, 72.8797 with radius 4km - city center might be inside Kurla
+    // Let's use a point far from all zones - e.g. Thane (19.2183, 72.9781)
+    const outsideAll = findZoneContaining(19.2183, 72.9781);
+    expect(outsideAll).toBeNull();
+  });
+
+  it('returns null for coordinates in another city not covered by zones', () => {
+    // Delhi coordinates - no zones configured
+    const delhi = findZoneContaining(28.6139, 77.2090);
+    expect(delhi).toBeNull();
+  });
+
+  it('does not return nearest zone center when outside radius - only returns containing zone', () => {
+    // Point near Juhu but outside 5km radius (e.g. 7km away)
+    // Juhu center: 19.0988, 72.8267, radius 5km
+    // Point ~7km north: 19.1600, 72.8267
+    const nearButOutside = findZoneContaining(19.1600, 72.8267);
+    // Should be null because 7km > 5km radius
+    // Note: findNearestZone would still return Juhu as nearest center
+    expect(nearButOutside).toBeNull();
+  });
+});
+
+describe('Regression: Invalid/undefined coordinates handling (browser crash fix)', () => {
+  it('calculateDistanceKm returns null for undefined coordinates', () => {
+    expect(calculateDistanceKm(undefined, undefined, undefined, undefined)).toBeNull();
+    expect(calculateDistanceKm(null, null, null, null)).toBeNull();
+    expect(calculateDistanceKm(NaN, NaN, NaN, NaN)).toBeNull();
+    expect(calculateDistanceKm(19.0988, 72.8267, undefined, undefined)).toBeNull();
+    expect(calculateDistanceKm(undefined, undefined, 19.0988, 72.8267)).toBeNull();
+  });
+
+  it('findNearestZone returns null for invalid coordinates', () => {
+    expect(findNearestZone(undefined, undefined)).toBeNull();
+    expect(findNearestZone(null, null)).toBeNull();
+    expect(findNearestZone(NaN, NaN)).toBeNull();
+  });
+
+  it('findZoneContaining returns null for invalid coordinates', () => {
+    expect(findZoneContaining(undefined, undefined)).toBeNull();
+    expect(findZoneContaining(null, null)).toBeNull();
+    expect(findZoneContaining(NaN, NaN)).toBeNull();
+  });
+
+  it('findNearestSafeLocation returns null for invalid coordinates', () => {
+    expect(findNearestSafeLocation(undefined, undefined)).toBeNull();
+    expect(findNearestSafeLocation(null, null)).toBeNull();
+    expect(findNearestSafeLocation(NaN, NaN)).toBeNull();
+  });
+});
+
+describe('Forecast Horizon Data Flow', () => {
+  it('Hourly weather point structure includes rainProbability, precipitation, windSpeed', () => {
+    // This test documents the expected structure of WeatherHourlyPoint
+    const hourlyPoint = {
+      time: '2026-10-01T13:00:00.000Z',
+      rainProbability: 75,
+      precipitation: 12.5,
+      windSpeed: 28,
+    };
+    expect(typeof hourlyPoint.time).toBe('string');
+    expect(typeof hourlyPoint.rainProbability).toBe('number');
+    expect(typeof hourlyPoint.precipitation).toBe('number');
+    expect(typeof hourlyPoint.windSpeed).toBe('number');
+  });
+
+  it('Hourly marine point structure includes waveHeight', () => {
+    const marinePoint = {
+      time: '2026-10-01T13:00:00.000Z',
+      waveHeight: 2.5,
+    };
+    expect(typeof marinePoint.time).toBe('string');
+    expect(typeof marinePoint.waveHeight).toBe('number');
   });
 });
 

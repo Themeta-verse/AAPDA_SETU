@@ -68,13 +68,29 @@ export interface IncidentError {
   code?: string;
 }
 
+export type IncidentStatus =
+  | 'unverified'
+  | 'verified'
+  | 'dispatched'
+  | 'resolved'
+  | 'rejected';
+
+export type EvidenceStatus = 'SUFFICIENT' | 'PARTIAL' | 'INSUFFICIENT';
+
+export interface IncidentAuditLog {
+  id: string;
+  incidentId: string;
+  performedBy: string | null;
+  action: string;
+  previousStatus: string | null;
+  newStatus: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
 /**
  * One incident, normalized. Every optional field is explicitly `null` when the
  * database has no value — never defaulted, never guessed.
- *
- * `status`/`severity`/`verified` are deliberately ABSENT: `incident_reports`
- * has no such columns. Rendering them would mean inventing facts about a
- * real emergency, so this type cannot express them.
  */
 export interface Incident {
   id: string;
@@ -92,6 +108,20 @@ export interface Incident {
   createdAt: string | null;
   /** True when the row had to be repaired to be displayed at all. */
   malformed: boolean;
+  // Operational workflow fields
+  status?: IncidentStatus;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  verificationNotes?: string | null;
+  rejectionReason?: string | null;
+  clusterId?: string | null;
+  evidenceStatus?: EvidenceStatus | null;
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+  resolutionNotes?: string | null;
+  // Citizen SOS Emergency Beacon
+  isSos?: boolean;
+  sosType?: 'FLOOD' | 'TRAPPED' | 'MEDICAL' | 'OTHER' | null;
 }
 
 export interface IncidentListResult {
@@ -144,6 +174,12 @@ export interface IncidentClientLike {
       data: unknown;
       error: { message: string; code?: string } | null;
     }>;
+    update?(values: Record<string, unknown>): {
+      eq(column: string, value: unknown): PromiseLike<{
+        data: unknown;
+        error: { message: string; code?: string } | null;
+      }>;
+    };
   };
   storage: {
     from(bucket: string): {
@@ -228,7 +264,33 @@ function normalizeRow(row: unknown): Incident | null {
     (latitude === null) !== (longitude === null) ||
     (rawType !== null && !isIncidentType(rawType));
 
-  return {
+  const hasStatusInRow = 'status' in row && row.status !== undefined && row.status !== null;
+  const rawStatus = hasStatusInRow ? nonEmptyString(row.status) : null;
+  const status: IncidentStatus | undefined = hasStatusInRow
+    ? (rawStatus === 'verified' || rawStatus === 'dispatched' || rawStatus === 'resolved' || rawStatus === 'rejected'
+        ? rawStatus
+        : 'unverified')
+    : undefined;
+
+  const hasCoords = latitude !== null && longitude !== null;
+
+  let evidenceStatus: EvidenceStatus = 'INSUFFICIENT';
+  if (photoPath !== null && hasCoords && description !== null && description.trim().length > 0) {
+    evidenceStatus = 'SUFFICIENT';
+  } else if (photoPath !== null || hasCoords || (description !== null && description.trim().length > 0)) {
+    evidenceStatus = 'PARTIAL';
+  }
+
+  const isSos = description?.startsWith('[URGENT SOS') ?? false;
+  let sosType: 'FLOOD' | 'TRAPPED' | 'MEDICAL' | 'OTHER' | null = null;
+  if (isSos && description) {
+    const match = description.match(/\[URGENT SOS:\s*([A-Z]+)\]/i);
+    if (match && ['FLOOD', 'TRAPPED', 'MEDICAL', 'OTHER'].includes(match[1].toUpperCase())) {
+      sosType = match[1].toUpperCase() as 'FLOOD' | 'TRAPPED' | 'MEDICAL' | 'OTHER';
+    }
+  }
+
+  const result: Incident = {
     id,
     reporterId: reporterId ?? '',
     type: isIncidentType(rawType) ? rawType : null,
@@ -238,11 +300,30 @@ function normalizeRow(row: unknown): Incident | null {
     latitude,
     longitude,
     // Coordinates are only usable as a pair.
-    hasCoordinates: latitude !== null && longitude !== null,
+    hasCoordinates: hasCoords,
     createdAt,
     malformed,
+    isSos,
+    sosType,
   };
+
+  if (hasStatusInRow) {
+    result.status = status;
+    result.verifiedBy = nonEmptyString(row.verified_by);
+    result.verifiedAt = nonEmptyString(row.verified_at);
+    result.verificationNotes = nonEmptyString(row.verification_notes);
+    result.rejectionReason = nonEmptyString(row.rejection_reason);
+    result.clusterId = nonEmptyString(row.cluster_id);
+    result.evidenceStatus = (nonEmptyString(row.evidence_status) as EvidenceStatus) || evidenceStatus;
+    result.resolvedBy = nonEmptyString(row.resolved_by);
+    result.resolvedAt = nonEmptyString(row.resolved_at);
+    result.resolutionNotes = nonEmptyString(row.resolution_notes);
+  }
+
+  return result;
 }
+
+export const normalizeIncidentRow = normalizeRow;
 
 /**
  * Load the incidents the current session is ALLOWED to see.
@@ -461,4 +542,251 @@ export async function createSignedIncidentPhoto(
   }
 
   return { url, error: null };
+}
+
+/**
+ * Operational: Verify an incident report based on structured evidence.
+ * Logs transition to incident_audit_logs.
+ */
+export async function verifyIncidentReport(
+  deps: IncidentDeps,
+  params: {
+    incidentId: string;
+    verifiedBy: string;
+    notes?: string;
+    clusterId?: string;
+  }
+): Promise<{ ok: boolean; error: IncidentError | null }> {
+  const offline = connectivity();
+  if (offline) {
+    return {
+      ok: false,
+      error: { kind: 'network', message: 'You appear to be offline. Verification cannot be submitted.' },
+    };
+  }
+
+  const nowIso = (deps.now ? deps.now() : new Date()).toISOString();
+
+  if (typeof deps.client.from('incident_reports').update === 'function') {
+    const { error } = await deps.client
+      .from('incident_reports')
+      .update({
+        status: 'verified',
+        verified_by: params.verifiedBy,
+        verified_at: nowIso,
+        verification_notes: params.notes ?? 'Verified based on structured evidence',
+        cluster_id: params.clusterId ?? null,
+      })
+      .eq('id', params.incidentId);
+
+    if (error) {
+      return { ok: false, error: classify(error, 'database') };
+    }
+  }
+
+  // Audit trail
+  await deps.client.from('incident_audit_logs').insert({
+    incident_id: params.incidentId,
+    performed_by: params.verifiedBy,
+    action: 'verify',
+    previous_status: 'unverified',
+    new_status: 'verified',
+    notes: params.notes ?? 'Report verified by operational responder',
+  });
+
+  return { ok: true, error: null };
+}
+
+/**
+ * Operational: Reject an incident report while preserving original evidence.
+ * Logs transition to incident_audit_logs.
+ */
+export async function rejectIncidentReport(
+  deps: IncidentDeps,
+  params: {
+    incidentId: string;
+    rejectedBy: string;
+    reason: string;
+  }
+): Promise<{ ok: boolean; error: IncidentError | null }> {
+  const offline = connectivity();
+  if (offline) {
+    return {
+      ok: false,
+      error: { kind: 'network', message: 'You appear to be offline. Rejection cannot be submitted.' },
+    };
+  }
+
+  const nowIso = (deps.now ? deps.now() : new Date()).toISOString();
+
+  if (typeof deps.client.from('incident_reports').update === 'function') {
+    const { error } = await deps.client
+      .from('incident_reports')
+      .update({
+        status: 'rejected',
+        verified_by: params.rejectedBy,
+        verified_at: nowIso,
+        rejection_reason: params.reason,
+      })
+      .eq('id', params.incidentId);
+
+    if (error) {
+      return { ok: false, error: classify(error, 'database') };
+    }
+  }
+
+  // Audit trail
+  await deps.client.from('incident_audit_logs').insert({
+    incident_id: params.incidentId,
+    performed_by: params.rejectedBy,
+    action: 'reject',
+    previous_status: 'unverified',
+    new_status: 'rejected',
+    notes: params.reason,
+  });
+
+  return { ok: true, error: null };
+}
+
+/**
+ * Operational: Mark an incident as resolved following field operations.
+ * Logs transition to incident_audit_logs.
+ */
+export async function resolveIncidentReport(
+  deps: IncidentDeps,
+  params: {
+    incidentId: string;
+    resolvedBy: string;
+    notes?: string;
+  }
+): Promise<{ ok: boolean; error: IncidentError | null }> {
+  const offline = connectivity();
+  if (offline) {
+    return {
+      ok: false,
+      error: { kind: 'network', message: 'You appear to be offline. Resolution cannot be submitted.' },
+    };
+  }
+
+  const nowIso = (deps.now ? deps.now() : new Date()).toISOString();
+
+  if (typeof deps.client.from('incident_reports').update === 'function') {
+    const { error } = await deps.client
+      .from('incident_reports')
+      .update({
+        status: 'resolved',
+        resolved_by: params.resolvedBy,
+        resolved_at: nowIso,
+        resolution_notes: params.notes ?? 'Field response completed and hazard mitigated',
+      })
+      .eq('id', params.incidentId);
+
+    if (error) {
+      return { ok: false, error: classify(error, 'database') };
+    }
+  }
+
+  // Audit trail
+  await deps.client.from('incident_audit_logs').insert({
+    incident_id: params.incidentId,
+    performed_by: params.resolvedBy,
+    action: 'resolve',
+    previous_status: 'verified',
+    new_status: 'resolved',
+    notes: params.notes ?? 'Operational resolution confirmed',
+  });
+
+  return { ok: true, error: null };
+}
+
+/**
+ * Operational: Mark an incident as dispatched following tactical resource deployment.
+ * Logs transition to incident_audit_logs.
+ */
+export async function dispatchIncidentReport(
+  deps: IncidentDeps,
+  params: {
+    incidentId: string;
+    dispatchedBy: string;
+    notes?: string;
+  }
+): Promise<{ ok: boolean; error: IncidentError | null }> {
+  const offline = connectivity();
+  if (offline) {
+    return {
+      ok: false,
+      error: { kind: 'network', message: 'You appear to be offline. Dispatch cannot be submitted.' },
+    };
+  }
+
+  const nowIso = (deps.now ? deps.now() : new Date()).toISOString();
+
+  if (typeof deps.client.from('incident_reports').update === 'function') {
+    const { error } = await deps.client
+      .from('incident_reports')
+      .update({
+        status: 'dispatched',
+      })
+      .eq('id', params.incidentId);
+
+    if (error) {
+      return { ok: false, error: classify(error, 'database') };
+    }
+  }
+
+  // Audit trail
+  await deps.client.from('incident_audit_logs').insert({
+    incident_id: params.incidentId,
+    performed_by: params.dispatchedBy,
+    action: 'dispatch',
+    previous_status: 'verified',
+    new_status: 'dispatched',
+    notes: params.notes ?? 'Operational resource dispatched to incident site',
+  });
+
+  return { ok: true, error: null };
+}
+
+/**
+ * Fetch audit trail for an incident report.
+ */
+export async function fetchIncidentAuditLogs(
+  deps: IncidentDeps,
+  incidentId: string
+): Promise<{ logs: IncidentAuditLog[]; error: IncidentError | null }> {
+  const offline = connectivity();
+  if (offline) {
+    return {
+      logs: [],
+      error: { kind: 'network', message: 'You appear to be offline. Audit logs could not be loaded.' },
+    };
+  }
+
+  const { data, error } = await deps.client
+    .from('incident_audit_logs')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return { logs: [], error: classify(error, 'database') };
+  }
+
+  if (!Array.isArray(data)) {
+    return { logs: [], error: null };
+  }
+
+  const logs: IncidentAuditLog[] = data
+    .filter((row: Record<string, unknown>) => row.incident_id === incidentId)
+    .map((row: Record<string, unknown>) => ({
+      id: String(row.id),
+      incidentId: String(row.incident_id),
+      performedBy: String(row.performed_by),
+      action: String(row.action),
+      previousStatus: typeof row.previous_status === 'string' ? (row.previous_status as IncidentStatus) : null,
+      newStatus: typeof row.new_status === 'string' ? (row.new_status as IncidentStatus) : null,
+      notes: typeof row.notes === 'string' ? row.notes : null,
+      createdAt: String(row.created_at),
+    }));
+
+  return { logs, error: null };
 }

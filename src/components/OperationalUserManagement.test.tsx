@@ -71,7 +71,7 @@ describe('OperationalUserManagement Component', () => {
         });
       }
       return Promise.resolve({ data: null, error: null });
-    }) as any);
+    }) as unknown as typeof supabase.rpc);
   });
 
   describe('Security Gating & Access Control', () => {

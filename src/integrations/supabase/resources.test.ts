@@ -107,24 +107,24 @@ function fakeClient(options: FakeClientOptions = {}) {
           currentFilter = { col, val };
           return queryBuilder;
         },
-        order: (col: string, opts: { ascending: boolean }) => {
+        order: (_col: string, _opts: { ascending: boolean }) => {
           if (options.error) {
             return Promise.resolve({ data: null, error: options.error });
           }
-          const data = (store as any)[table] || [];
+          const data = store[table] || [];
           return Promise.resolve({ data, error: null });
         },
         limit: (n: number) => {
-          const data = (store as any)[table] || [];
+          const data = store[table] || [];
           return Promise.resolve({ data: data.slice(0, n), error: null });
         },
         single: () => {
           if (options.error) {
             return Promise.resolve({ data: null, error: options.error });
           }
-          const list = (store as any)[table] || [];
+          const list = store[table] || [];
           const found = currentFilter
-            ? list.find((item: any) => item[currentFilter!.col] === currentFilter!.val)
+            ? list.find((item: Row) => item[currentFilter!.col] === currentFilter!.val)
             : list[0];
           if (!found) {
             return Promise.resolve({ data: null, error: { message: 'Row not found', code: 'PGRST116' } });
@@ -134,8 +134,8 @@ function fakeClient(options: FakeClientOptions = {}) {
         insert: (values: Row) => {
           calls.inserts.push({ table, values });
           const insertedRow = { id: `generated-${Date.now()}`, ...values };
-          if (!options.error && (store as any)[table]) {
-            (store as any)[table].push(insertedRow);
+          if (!options.error && store[table]) {
+            store[table].push(insertedRow);
           }
           return {
             select: () => ({
@@ -144,7 +144,7 @@ function fakeClient(options: FakeClientOptions = {}) {
                 error: options.error ?? null,
               }),
             }),
-            then: (resolve: any) => resolve({
+            then: (resolve: (arg: unknown) => void) => resolve({
               data: options.error ? null : insertedRow,
               error: options.error ?? null,
             }),
@@ -157,8 +157,8 @@ function fakeClient(options: FakeClientOptions = {}) {
               if (options.error) {
                 return Promise.resolve({ data: null, error: options.error });
               }
-              const list = (store as any)[table] || [];
-              const row = list.find((item: any) => item[col] === val);
+              const list = store[table] || [];
+              const row = list.find((item: Row) => item[col] === val);
               if (row) {
                 Object.assign(row, values);
               }
@@ -172,8 +172,8 @@ function fakeClient(options: FakeClientOptions = {}) {
               if (options.error) {
                 return Promise.resolve({ data: null, error: options.error });
               }
-              const list = (store as any)[table] || [];
-              (store as any)[table] = list.filter((item: any) => item[col] !== val);
+              const list = store[table] || [];
+              store[table] = list.filter((item: Row) => item[col] !== val);
               return Promise.resolve({ data: null, error: null });
             },
           };
@@ -187,9 +187,9 @@ function fakeClient(options: FakeClientOptions = {}) {
   return { client, store, calls };
 }
 
-function deps(client: any, isOnline = true): ResourceDeps {
+function deps(client: unknown, isOnline = true): ResourceDeps {
   return {
-    client,
+    client: client as unknown as ResourceDeps['client'],
     isOnline: () => isOnline,
     now: () => new Date('2026-10-01T12:00:00.000Z'),
   };

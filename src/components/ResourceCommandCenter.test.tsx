@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { User } from '@supabase/supabase-js';
 import { ResourceCommandCenter } from './ResourceCommandCenter';
+import { clearSchemaAvailabilityCache } from '@/integrations/supabase/resources';
 
 type Row = Record<string, unknown>;
 
@@ -54,6 +55,7 @@ function fakeClient(options: {
   incidents?: Row[];
   onDeleteResource?: (id: string) => void;
   onDeleteAllocation?: (id: string) => void;
+  schemaAvailable?: boolean;
 } = {}) {
   const store: Record<string, Row[]> = {
     resources: [...(options.resources ?? [])],
@@ -63,22 +65,58 @@ function fakeClient(options: {
     incident_reports: [...(options.incidents ?? [])],
   };
 
+  const schemaAvailable = options.schemaAvailable !== false;
+  const queries: { table: string; select?: string; orderCol?: string; limitN?: number }[] = [];
+
   const client = {
+    _queries: queries,
     from: (table: string) => {
       let currentFilter: { col: string; val: unknown } | null = null;
+      let selectColumns: string | null = null;
 
       const builder = {
-        select: () => builder,
+        select: (cols?: string) => {
+          selectColumns = cols ?? '*';
+          return builder;
+        },
         eq: (col: string, val: unknown) => {
           currentFilter = { col, val };
           return builder;
         },
-        order: () => Promise.resolve({ data: store[table] || [], error: null }),
-        limit: (n: number) => Promise.resolve({ data: (store[table] || []).slice(0, n), error: null }),
+        order: (col?: string) => {
+          queries.push({ table, select: selectColumns ?? '*', orderCol: col });
+          // Schema check: select('id').limit(1) on resources table
+          if (table === 'resources' && selectColumns === 'id') {
+            if (schemaAvailable) {
+              return Promise.resolve({ data: store.resources.slice(0, 1).map(r => ({ id: r.id })), error: null });
+            } else {
+              return Promise.resolve({ data: null, error: { message: "Could not find the table 'public.resources' in the schema cache", code: 'PGRST204' } });
+            }
+          }
+          if (!schemaAvailable && (table === 'resources' || table.startsWith('resource_'))) {
+            return Promise.resolve({ data: null, error: { message: `Could not find the table 'public.${table}' in the schema cache`, code: 'PGRST204' } });
+          }
+          return Promise.resolve({ data: store[table] || [], error: null });
+        },
+        limit: (n: number) => {
+          queries.push({ table, select: selectColumns ?? '*', limitN: n });
+          // Schema check: select('id').limit(1) on resources table
+          if (table === 'resources' && selectColumns === 'id') {
+            if (schemaAvailable) {
+              return Promise.resolve({ data: store.resources.slice(0, n).map(r => ({ id: r.id })), error: null });
+            } else {
+              return Promise.resolve({ data: null, error: { message: "Could not find the table 'public.resources' in the schema cache", code: 'PGRST204' } });
+            }
+          }
+          if (!schemaAvailable && (table === 'resources' || table.startsWith('resource_'))) {
+            return Promise.resolve({ data: null, error: { message: `Could not find the table 'public.${table}' in the schema cache`, code: 'PGRST204' } });
+          }
+          return Promise.resolve({ data: (store[table] || []).slice(0, n), error: null });
+        },
         single: () => {
           const list = store[table] || [];
           const found = currentFilter
-            ? list.find((item: any) => item[currentFilter!.col] === currentFilter!.val)
+            ? list.find((item: Row) => item[currentFilter!.col] === currentFilter!.val)
             : list[0];
           return Promise.resolve({ data: found || null, error: found ? null : { message: 'Not found' } });
         },
@@ -89,13 +127,13 @@ function fakeClient(options: {
             select: () => ({
               single: () => Promise.resolve({ data: row, error: null }),
             }),
-            then: (resolve: any) => resolve({ data: row, error: null }),
+            then: (resolve: (arg: unknown) => void) => resolve({ data: row, error: null }),
           };
         },
         update: (values: Row) => ({
           eq: (col: string, val: unknown) => {
             const list = store[table] || [];
-            const row = list.find((item: any) => item[col] === val);
+            const row = list.find((item: Row) => item[col] === val);
             if (row) Object.assign(row, values);
             return Promise.resolve({ data: row, error: null });
           },
@@ -109,7 +147,7 @@ function fakeClient(options: {
               options.onDeleteAllocation(String(val));
             }
             if (store[table]) {
-              store[table] = store[table].filter((item: any) => item[col] !== val);
+              store[table] = store[table].filter((item: Row) => item[col] !== val);
             }
             return Promise.resolve({ data: null, error: null });
           },
@@ -147,6 +185,7 @@ function citizenUser() {
 
 beforeEach(() => {
   Object.defineProperty(globalThis.navigator, 'onLine', { value: true, configurable: true });
+  clearSchemaAvailabilityCache();
 });
 
 describe('ResourceCommandCenter Component', () => {
@@ -353,26 +392,66 @@ describe('ResourceCommandCenter Component', () => {
     expect(await screen.findByText(/Connection Offline/i)).toBeInTheDocument();
   });
 
-  it('renders isolated query error notice with retry button when database tables return error or 404', async () => {
-    const errorClient = {
-      from: () => ({
-        select: () => ({
-          order: () => Promise.resolve({ data: null, error: { message: "Could not find the table 'public.resources' in the schema cache" } }),
-        }),
-      }),
-    };
-
+  it('renders isolated query error notice with retry button when database tables return error or 404, without 404 query spam', async () => {
+    const client = fakeClient({ schemaAvailable: false });
     render(
       <ResourceCommandCenter
         language="en"
         user={responderUser()}
-        client={errorClient}
+        client={client}
       />
     );
 
+    // Notice renders cleanly
     expect(await screen.findByTestId('resource-query-error-notice')).toBeInTheDocument();
-    expect(screen.getByText(/Resource Data Notice/i)).toBeInTheDocument();
-    expect(screen.getByText(/Could not find the table 'public.resources'/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Retry/i })).toBeInTheDocument();
+    const errorNotice = screen.getByTestId('resource-query-error-notice');
+    expect(errorNotice.textContent).toContain('Resource Management Not Configured');
+    expect(errorNotice.textContent).toContain('resource management backend tables are not present');
+
+    // Truthful unavailable state: KPIs are 0
+    const kpiSection = screen.getByTestId('resource-kpis');
+    expect(kpiSection).toBeInTheDocument();
+    // Empty inventory state is rendered
+    expect(screen.getByTestId('empty-resources')).toBeInTheDocument();
+
+    // Verify ZERO resource requests for created_at or allocated_at were executed
+    const subqueries = client._queries.filter(
+      (q) =>
+        (q.table === 'resources' || q.table.startsWith('resource_')) &&
+        (q.orderCol === 'created_at' || q.orderCol === 'allocated_at')
+    );
+    expect(subqueries).toHaveLength(0);
+
+    // Initial probe queries: exactly one probe select('id').limit(1)
+    const probeQueriesInitial = client._queries.filter(
+      (q) => q.table === 'resources' && q.select === 'id' && q.limitN === 1
+    );
+    expect(probeQueriesInitial).toHaveLength(1);
+
+    // Click Retry
+    const retryBtn = screen.getByRole('button', { name: /Retry/i });
+    fireEvent.click(retryBtn);
+
+    // Wait for retry to finish
+    await waitFor(() => {
+      expect(retryBtn).not.toBeDisabled();
+    });
+
+    // Still in graceful unavailable state
+    expect(screen.getByTestId('resource-query-error-notice')).toBeInTheDocument();
+
+    // Still ZERO resource requests for created_at or allocated_at
+    const subqueriesAfterRetry = client._queries.filter(
+      (q) =>
+        (q.table === 'resources' || q.table.startsWith('resource_')) &&
+        (q.orderCol === 'created_at' || q.orderCol === 'allocated_at')
+    );
+    expect(subqueriesAfterRetry).toHaveLength(0);
+
+    // Exactly ONE fresh probe was executed for Retry (total 2)
+    const probeQueriesTotal = client._queries.filter(
+      (q) => q.table === 'resources' && q.select === 'id' && q.limitN === 1
+    );
+    expect(probeQueriesTotal).toHaveLength(2);
   });
 });

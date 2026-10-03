@@ -310,13 +310,21 @@ export const DEFAULT_SAFE_LOCATIONS: SafeLocation[] = [
   },
 ];
 
-/** Haversine distance in kilometers */
+/** Haversine distance in kilometers — returns null if any coordinate is invalid */
 export function calculateDistanceKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
+  lat1: number | undefined | null,
+  lon1: number | undefined | null,
+  lat2: number | undefined | null,
+  lon2: number | undefined | null
+): number | null {
+  if (
+    typeof lat1 !== 'number' || !Number.isFinite(lat1) ||
+    typeof lon1 !== 'number' || !Number.isFinite(lon1) ||
+    typeof lat2 !== 'number' || !Number.isFinite(lat2) ||
+    typeof lon2 !== 'number' || !Number.isFinite(lon2)
+  ) {
+    return null;
+  }
   const R = 6371; // Earth radius km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -352,19 +360,25 @@ export function filterSafeLocations(
   return locations;
 }
 
-/** Find nearest zone to given coordinates */
+/** Find nearest zone to given coordinates — returns null if coordinates invalid */
 export function findNearestZone(
-  lat: number,
-  lon: number,
+  lat: number | undefined | null,
+  lon: number | undefined | null,
   zones: UrbanZone[] = DEFAULT_URBAN_ZONES
 ): { zone: UrbanZone; distanceKm: number } | null {
   if (zones.length === 0) return null;
+  if (
+    typeof lat !== 'number' || !Number.isFinite(lat) ||
+    typeof lon !== 'number' || !Number.isFinite(lon)
+  ) {
+    return null;
+  }
 
   let nearest = zones[0];
-  let minDistance = calculateDistanceKm(lat, lon, nearest.centerLat, nearest.centerLon);
+  let minDistance = calculateDistanceKm(lat, lon, nearest.centerLat, nearest.centerLon) ?? Number.POSITIVE_INFINITY;
 
   for (let i = 1; i < zones.length; i++) {
-    const dist = calculateDistanceKm(lat, lon, zones[i].centerLat, zones[i].centerLon);
+    const dist = calculateDistanceKm(lat, lon, zones[i].centerLat, zones[i].centerLon) ?? Number.POSITIVE_INFINITY;
     if (dist < minDistance) {
       minDistance = dist;
       nearest = zones[i];
@@ -374,19 +388,47 @@ export function findNearestZone(
   return { zone: nearest, distanceKm: minDistance };
 }
 
-/** Find nearest safe evacuation location */
+/** Find zone that contains the given coordinates (within radiusKm) — returns null if coordinates invalid */
+export function findZoneContaining(
+  lat: number | undefined | null,
+  lon: number | undefined | null,
+  zones: UrbanZone[] = DEFAULT_URBAN_ZONES
+): { zone: UrbanZone; distanceKm: number } | null {
+  if (
+    typeof lat !== 'number' || !Number.isFinite(lat) ||
+    typeof lon !== 'number' || !Number.isFinite(lon)
+  ) {
+    return null;
+  }
+  for (const zone of zones) {
+    if (!zone.isActive) continue;
+    const dist = calculateDistanceKm(lat, lon, zone.centerLat, zone.centerLon);
+    if (dist !== null && dist <= zone.radiusKm) {
+      return { zone, distanceKm: dist };
+    }
+  }
+  return null;
+}
+
+/** Find nearest safe evacuation location — returns null if coordinates invalid */
 export function findNearestSafeLocation(
-  lat: number,
-  lon: number,
+  lat: number | undefined | null,
+  lon: number | undefined | null,
   locations: SafeLocation[] = DEFAULT_SAFE_LOCATIONS
 ): { location: SafeLocation; distanceKm: number } | null {
   if (locations.length === 0) return null;
+  if (
+    typeof lat !== 'number' || !Number.isFinite(lat) ||
+    typeof lon !== 'number' || !Number.isFinite(lon)
+  ) {
+    return null;
+  }
 
   let nearest = locations[0];
-  let minDistance = calculateDistanceKm(lat, lon, nearest.latitude, nearest.longitude);
+  let minDistance = calculateDistanceKm(lat, lon, nearest.latitude, nearest.longitude) ?? Number.POSITIVE_INFINITY;
 
   for (let i = 1; i < locations.length; i++) {
-    const dist = calculateDistanceKm(lat, lon, locations[i].latitude, locations[i].longitude);
+    const dist = calculateDistanceKm(lat, lon, locations[i].latitude, locations[i].longitude) ?? Number.POSITIVE_INFINITY;
     if (dist < minDistance) {
       minDistance = dist;
       nearest = locations[i];

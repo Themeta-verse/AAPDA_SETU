@@ -421,3 +421,62 @@ Without these, all SMS deliveries remain in TEST MODE — no real SMS sent, no c
 * `npx tsc --noEmit` — **PASS** (0 type errors)
 * `npm run build` — **PASS** (Production bundle generated cleanly in 10.04s)
 * `git diff --check` — **PASS** (0 whitespace/formatting errors)
+
+---
+
+### 2026-10-01 — Integration Phase: Urban Flood Intelligence (WS1) & Incident → Response Workflow (WS2)
+
+#### Overview
+Connected the existing system into one end-to-end traceable workflow:
+`PREDICT → VERIFY → RESPOND → PROTECT`.
+Implemented Workstream 1 (Deterministic Urban Flood Intelligence) and Workstream 2 (Incident → Response Operational Pipeline) on top of the existing components, hooks, and database architecture.
+
+#### Database Migrations (Additive Only)
+* `supabase/migrations/20261001180000_urban_flood_intelligence.sql`:
+  - Table `flood_risk_assessments` storing immutable risk assessments with full provenance (`location`, `risk_level`, `assessment_time`, `source_timestamps`, `source_names`, `freshness`, `model_version`, `contributing_inputs`, `explanation`, `forecast_horizon`).
+  - Added RLS: Operational users (`is_responder()`) have full read/write; authenticated citizens have read access.
+* `supabase/migrations/20261001190000_incident_workflow.sql`:
+  - Added operational fields to `public.incident_reports`: `status` (`unverified`, `verified`, `dispatched`, `resolved`, `rejected`), `verified_by`, `verified_at`, `verification_notes`, `rejection_reason`, `cluster_id`, `evidence_status`, `resolved_by`, `resolved_at`, `resolution_notes`.
+  - Added table `public.incident_audit_logs` recording every state transition (`incident_id`, `performed_by`, `action`, `previous_status`, `new_status`, `notes`, `created_at`).
+  - Preserved original citizen evidence: updates are restricted to operational fields; citizen descriptions, coordinates, and photo keys are append-only and cannot be mutated or deleted.
+
+#### Workstream 1: Deterministic Forecast-Based Flood Risk Intelligence
+* `src/lib/floodIntelligence.ts`:
+  - Pure deterministic risk assessment engine (`deterministic-flood-v1`).
+  - Zero ML/AI claims, zero `Math.random()`, zero fabricated confidence percentages.
+  - Answers the 5 core operational questions: WHERE, HOW severe, WHY, WHAT happens next, WHAT sources support this.
+  - Multi-horizon evaluation: `NOW`, `+1H`, `+3H`, `+6H`, `+24H`.
+  - Strict missing data handling: coastal zones missing marine feeds transition to `INSUFFICIENT_DATA`; inland zones treat marine data as `NOT_APPLICABLE` (explicitly distinguished). Missing values are never converted into SAFE or 0.
+* `src/components/DeterministicFloodAssessment.tsx`:
+  - Interactive assessment UI with horizon selector tabs, trend indicators (escalation, persistence, reduction, peak), question/answer cards, contributing factors list, and technical provenance breakdown.
+* `src/components/EvacuationMap.tsx`:
+  - Enhanced with multi-layer spatial controls (Risk Zones, Verified Incidents, Resources, Safe Shelters, GPS Location).
+  - Explicit `GEOGRAPHIC RISK DATA UNAVAILABLE` state when coordinates/zones are missing; zero fake polygons or mock shelters.
+
+#### Workstream 2: Incident → Response Workflow
+* `src/lib/incidentClustering.ts`:
+  - Duplicate detection based on spatial proximity (<= 500m) and temporal proximity (<= 2 hours) matching incident types.
+  - Grouping preserves all individual citizen reports and evidence without destructive merging.
+* `src/lib/incidentDemand.ts`:
+  - Derives tactical resource demand deterministically from verified incident types and structured evidence (e.g. water pumps/boats for flooding; heavy equipment for blocked roads).
+  - Demand is generated ONLY for verified or dispatched incidents.
+* `src/integrations/supabase/incidents.ts`:
+  - Added `verifyIncidentReport`, `rejectIncidentReport`, `resolveIncidentReport`, `fetchIncidentAuditLogs`, and normalized operational incident properties.
+  - Private storage model preserved using short-lived signed URLs.
+* `src/components/IncidentIntelligence.tsx`:
+  - Responder incident queue with evidence inspection, status badges (`PENDING REVIEW`, `VERIFIED`, `DISPATCHED`, `RESOLVED`, `REJECTED`), inline verification and rejection with notes, duplicate cluster grouping, and demand presentation.
+* `src/components/CitizenReporting.tsx`:
+  - Added citizen report status tracking (`Your Reported Hazards`) allowing citizens to track their report reference IDs and lifecycle status without exposing operational responder controls or other users' private data.
+* `src/pages/Index.tsx`:
+  - Integrated `DeterministicFloodAssessment` in both Operational Workspace and Citizen Dashboard.
+  - Wired live spatial layers (verified incidents, resources, risk zones, GPS) to `EvacuationMap`.
+
+#### Test Coverage & Verification
+* `src/lib/floodIntelligence.test.ts` — 9 unit tests passing (horizons, missing data, stale data, coastal vs inland, provenance).
+* `src/lib/incidentClustering.test.ts` — 5 unit tests passing (proximity, time window, cluster preservation).
+* `src/lib/incidentDemand.test.ts` — 6 unit tests passing (deterministic demand derivation, priority, compatibility).
+* `src/integrations/supabase/incidentWorkflow.test.ts` — 5 unit tests passing (lifecycle transitions, audit logging, rejection preservation).
+* Total test suite: 19 test files, 329 tests passing.
+* TypeScript: `npx tsc --noEmit` — 0 errors.
+* Build: `npm run build` — Successful production bundle.
+* Lint: `npx eslint` — 0 errors across all modified and new files.

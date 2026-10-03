@@ -60,6 +60,14 @@ export interface MarineHourlyPoint {
   waveHeight: number;
 }
 
+export interface WeatherHourlyPoint {
+  /** ISO-8601 timestamp as published by the source (source timezone). */
+  time: string;
+  rainProbability: number | null;
+  precipitation: number | null;
+  windSpeed: number | null;
+}
+
 /**
  * Normalized marine observation for a single point.
  *
@@ -105,6 +113,7 @@ export interface NormalizedMarine {
   rainProbability: number | null;
   temperature: number | null;
   pressure: number | null;
+  hourlyWeather: WeatherHourlyPoint[];
 
   error: SourceError | null;
 }

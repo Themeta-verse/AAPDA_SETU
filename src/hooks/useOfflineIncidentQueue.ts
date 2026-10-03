@@ -113,8 +113,9 @@ export function useOfflineIncidentQueue() {
 
           await updateIncidentStatus(incident.localQueueId, 'synced');
           toast({ title: '✅', description: 'Offline report synced successfully' });
-        } catch (err: any) {
-          await updateIncidentStatus(incident.localQueueId, 'failed', err.message);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Sync failed';
+          await updateIncidentStatus(incident.localQueueId, 'failed', msg);
         }
 
         await new Promise(r => setTimeout(r, 500));

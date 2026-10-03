@@ -6,6 +6,7 @@
  * Components never see a raw Supabase query.
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ResourceType,
   ResourceStatus,
@@ -72,7 +73,8 @@ export type ResourceErrorKind =
   | 'network'
   | 'database'
   | 'malformed'
-  | 'unauthenticated';
+  | 'unauthenticated'
+  | 'schema-unavailable';
 
 export interface ResourceError {
   kind: ResourceErrorKind;
@@ -217,7 +219,7 @@ export interface SuggestedAllocation {
 }
 
 export interface ResourceDeps {
-  client: any;
+  client: SupabaseClient;
   now?: () => Date;
   isOnline?: () => boolean;
 }
@@ -372,10 +374,69 @@ export function normalizeCompatibilityRow(row: unknown): ResourceIncidentCompati
   };
 }
 
+let schemaAvailabilityState: { available: boolean; checkedAt: number } | null = null;
+const SCHEMA_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+type SchemaListener = (available: boolean | null) => void;
+const schemaListeners = new Set<SchemaListener>();
+
+export function isResourceSchemaUnavailable(): boolean {
+  return schemaAvailabilityState !== null && schemaAvailabilityState.available === false;
+}
+
+export function getResourceSchemaAvailability(): boolean | null {
+  return schemaAvailabilityState ? schemaAvailabilityState.available : null;
+}
+
+export function setResourceSchemaAvailability(available: boolean): void {
+  schemaAvailabilityState = { available, checkedAt: Date.now() };
+  schemaListeners.forEach((fn) => {
+    try {
+      fn(available);
+    } catch {
+      // ignore listener error
+    }
+  });
+}
+
+export function clearSchemaAvailabilityCache(): void {
+  schemaAvailabilityState = null;
+  schemaListeners.forEach((fn) => {
+    try {
+      fn(null);
+    } catch {
+      // ignore listener error
+    }
+  });
+}
+
+export function subscribeResourceSchemaAvailability(listener: SchemaListener): () => void {
+  schemaListeners.add(listener);
+  return () => {
+    schemaListeners.delete(listener);
+  };
+}
+
 function classify(
   error: { message: string; code?: string },
   fallback: ResourceErrorKind
 ): ResourceError {
+  // Handle missing table / schema cache errors gracefully
+  if (
+    error.code === 'PGRST204' ||
+    error.code === '42P01' ||
+    error.message?.includes('Could not find the table') ||
+    error.message?.includes('schema cache') ||
+    error.message?.includes('does not exist')
+  ) {
+    setResourceSchemaAvailability(false);
+    return {
+      kind: 'schema-unavailable',
+      message: 'Resource management tables are not configured in the database.',
+      code: error.code,
+    };
+  }
+
   return {
     kind: error.code === PERMISSION_DENIED_CODE ? 'permission-denied' : fallback,
     message: error.message,
@@ -390,7 +451,65 @@ function checkOffline(deps: ResourceDeps): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' && !navigator.onLine;
 }
 
+/**
+ * Check if resource management tables exist in the schema.
+ * Returns true if tables are available, false if schema-unavailable error.
+ * Caches the result to avoid repeated checks within the same session.
+ */
+let activeProbePromise: Promise<boolean> | null = null;
+
+export async function checkSchemaAvailability(deps: ResourceDeps, force: boolean = false): Promise<boolean> {
+  if (checkOffline(deps)) {
+    return false;
+  }
+
+  const now = Date.now();
+  if (!force && schemaAvailabilityState && now - schemaAvailabilityState.checkedAt < SCHEMA_CACHE_TTL_MS) {
+    return schemaAvailabilityState.available;
+  }
+
+  if (activeProbePromise && !force) {
+    return activeProbePromise;
+  }
+
+  activeProbePromise = (async () => {
+    try {
+      // Try to query the resources table with a minimal select
+      const { error } = await deps.client
+        .from('resources')
+        .select('id')
+        .limit(1);
+
+      const available = !error || (
+        error.code !== 'PGRST204' &&
+        error.code !== '42P01' &&
+        !error.message?.includes('Could not find the table') &&
+        !error.message?.includes('schema cache') &&
+        !error.message?.includes('does not exist')
+      );
+
+      setResourceSchemaAvailability(available);
+      return available;
+    } catch {
+      setResourceSchemaAvailability(false);
+      return false;
+    } finally {
+      activeProbePromise = null;
+    }
+  })();
+
+  return activeProbePromise;
+}
+
 export async function listResources(deps: ResourceDeps): Promise<ResourceListResult> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      resources: [],
+      fetchedAt: null,
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       resources: [],
@@ -430,6 +549,14 @@ export async function listResources(deps: ResourceDeps): Promise<ResourceListRes
 }
 
 export async function listResourceAllocations(deps: ResourceDeps): Promise<ResourceAllocationListResult> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      allocations: [],
+      fetchedAt: null,
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       allocations: [],
@@ -469,6 +596,13 @@ export async function listResourceAllocations(deps: ResourceDeps): Promise<Resou
 }
 
 export async function listResourceAuditLogs(deps: ResourceDeps): Promise<ResourceAuditLogListResult> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      logs: [],
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       logs: [],
@@ -503,6 +637,13 @@ export async function listResourceAuditLogs(deps: ResourceDeps): Promise<Resourc
 }
 
 export async function listResourceIncidentCompatibility(deps: ResourceDeps): Promise<CompatibilityListResult> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      compatibilities: [],
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       compatibilities: [],
@@ -543,6 +684,14 @@ export async function createResource(
   deps: ResourceDeps,
   input: CreateResourceInput
 ): Promise<{ ok: boolean; error: ResourceError | null; resourceId: string | null }> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      ok: false,
+      resourceId: null,
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       ok: false,
@@ -625,6 +774,14 @@ export async function createResourceAllocation(
   deps: ResourceDeps,
   input: SubmitAllocationInput
 ): Promise<SubmitAllocationResult> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      ok: false,
+      allocationId: null,
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       ok: false,
@@ -754,6 +911,13 @@ export async function updateResourceAllocation(
   deps: ResourceDeps,
   input: UpdateAllocationInput
 ): Promise<UpdateAllocationResult> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      ok: false,
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       ok: false,
@@ -881,6 +1045,13 @@ export async function deleteResource(
   deps: ResourceDeps,
   resourceId: string
 ): Promise<{ ok: boolean; error: ResourceError | null }> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      ok: false,
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       ok: false,
@@ -907,6 +1078,13 @@ export async function deleteResourceAllocation(
   deps: ResourceDeps,
   allocationId: string
 ): Promise<{ ok: boolean; error: ResourceError | null }> {
+  if (isResourceSchemaUnavailable()) {
+    return {
+      ok: false,
+      error: { kind: 'schema-unavailable', message: 'Resource management tables are not configured in the database.' },
+    };
+  }
+
   if (checkOffline(deps)) {
     return {
       ok: false,

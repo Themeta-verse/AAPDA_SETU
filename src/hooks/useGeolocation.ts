@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   distanceMetres,
   initialBearing,
@@ -185,7 +185,13 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
   const isStale = fix !== null && clock - fix.at > staleAfterMs;
   const hasFix = fix !== null && !isStale;
 
-  const position: LatLon | null = hasFix ? { latitude: fix!.latitude, longitude: fix!.longitude } : null;
+  const position: LatLon | null = useMemo(
+    () =>
+      hasFix && fix
+        ? { latitude: fix.latitude, longitude: fix.longitude }
+        : null,
+    [hasFix, fix],
+  );
 
   /**
    * Real distance and direction to a supplied destination.
@@ -208,6 +214,15 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     [position],
   );
 
+  const error =
+    status === 'denied' ||
+    status === 'unavailable' ||
+    status === 'timeout' ||
+    status === 'unsupported' ||
+    status === 'error'
+      ? STATUS_MESSAGE[status]
+      : null;
+
   return {
     position,
     fix,
@@ -218,7 +233,11 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     isStale,
     watching,
     requestLocation,
+    refresh: requestLocation,
     stopWatching,
+    error,
+    loading: status === 'locating',
+    permissionGranted: status === 'ready' || hasFix,
     /** "19.09880, 72.82670" or null. Never a fabricated coordinate. */
     formatted: formatCoordinate(position),
     accuracyLabel: fix ? describeAccuracy(fix.accuracyM) : null,
@@ -236,16 +255,34 @@ export type UseGeolocationReturn = ReturnType<typeof useGeolocation>;
 // ---------------------------------------------------------------------
 // Shared geodesic helpers for the urban (multi-city) layer.
 // ---------------------------------------------------------------------
-//
-// These are real calculations over caller-supplied coordinates. They carry no
-// application state and invent no destination: `getEvacuationDirectionTo`
-// computes a bearing to a REAL target the caller provides (a configured safe
-// location), which is why it is kept while the old hardcoded-destination
-// `getEvacuationDirection` (two literals that happened to look like Mumbai)
-// was removed.
 
-/** Great-circle distance between two points, kilometres. */
-export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export interface GeolocationTarget {
+  latitude: number;
+  longitude: number;
+  name?: string;
+}
+
+export interface GeoPosition {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+/** Haversine great-circle distance between two points in km. Returns null if any coordinate is invalid. */
+export function calculateDistance(
+  lat1: number | undefined | null,
+  lon1: number | undefined | null,
+  lat2: number | undefined | null,
+  lon2: number | undefined | null
+): number | null {
+  if (
+    typeof lat1 !== 'number' || !Number.isFinite(lat1) ||
+    typeof lon1 !== 'number' || !Number.isFinite(lon1) ||
+    typeof lat2 !== 'number' || !Number.isFinite(lat2) ||
+    typeof lon2 !== 'number' || !Number.isFinite(lon2)
+  ) {
+    return null;
+  }
   const R = 6371; // Earth radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -255,8 +292,21 @@ export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Compass heading from a user position to a real, caller-supplied target point. */
-export function getEvacuationDirectionTo(userLat: number, userLon: number, targetLat: number, targetLon: number): string {
+/** Compass heading from a user position to a real, caller-supplied target point. Returns null if invalid. */
+export function getEvacuationDirectionTo(
+  userLat: number | undefined | null,
+  userLon: number | undefined | null,
+  targetLat: number | undefined | null,
+  targetLon: number | undefined | null
+): string | null {
+  if (
+    typeof userLat !== 'number' || !Number.isFinite(userLat) ||
+    typeof userLon !== 'number' || !Number.isFinite(userLon) ||
+    typeof targetLat !== 'number' || !Number.isFinite(targetLat) ||
+    typeof targetLon !== 'number' || !Number.isFinite(targetLon)
+  ) {
+    return null;
+  }
   const dLon = (targetLon - userLon) * Math.PI / 180;
   const y = Math.sin(dLon) * Math.cos(targetLat * Math.PI / 180);
   const x = Math.cos(userLat * Math.PI / 180) * Math.sin(targetLat * Math.PI / 180) -

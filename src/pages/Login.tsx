@@ -29,11 +29,11 @@ export default function Login() {
         await signIn(email, password);
         toast({ title: '✅ Welcome back!', description: 'Logged in successfully.' });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: err.message || 'Something went wrong',
+        description: err instanceof Error ? err.message : 'Something went wrong',
       });
     } finally {
       setSubmitting(false);

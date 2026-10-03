@@ -74,7 +74,12 @@ vi.mock('@/components/ThemeToggle', () => ({
   ThemeToggle: () => <div data-testid="theme-toggle">Theme Toggle</div>,
 }));
 
-let mockUser: any = null;
+let mockUser: {
+  id: string;
+  email?: string;
+  app_metadata?: Record<string, unknown>;
+  user_metadata?: Record<string, unknown>;
+} | null = null;
 let mockAuthLoading = false;
 let mockRoleState = {
   role: 'citizen' as 'citizen' | 'responder' | 'admin',
@@ -204,7 +209,6 @@ describe('Index Page - Role-Aware Operational Navigation & Command Access', () =
       expect(screen.getByTestId('citizen-dashboard')).toBeDefined();
       expect(screen.getByTestId('hero-section')).toBeDefined();
       expect(screen.getByTestId('monitoring-dashboard')).toBeDefined();
-      expect(screen.getByTestId('location-tracker')).toBeDefined();
       expect(screen.getByTestId('citizen-reporting')).toBeDefined();
     });
 

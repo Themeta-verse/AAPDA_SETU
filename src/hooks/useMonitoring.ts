@@ -40,7 +40,11 @@ function currentStatus(marine: { fetchedAt: string | null; waveHeight: number | 
  * unknown" by the UI rather than as an all-clear. It is never derived from
  * magnitude or from wave height.
  */
-export function useMonitoring(intervalMs = 10000) {
+export function useMonitoring(
+  intervalMs = 10000,
+  _coordinates?: { latitude: number; longitude: number },
+  _isCoastal?: boolean
+) {
   // ONE shared pipeline. This hook previously called useWeatherData(),
   // useEarthquakeData() and useCoastalIntelligence() itself while
   // CoastalCommandCenter called useCoastalIntelligence() again, so one page load

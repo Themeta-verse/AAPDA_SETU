@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, Send, AlertTriangle, Waves, Construction, Loader2, CheckCircle, FileWarning, Plus, Clock, Upload, WifiOff } from 'lucide-react';
 import { type Language, translations } from '@/lib/translations';
@@ -10,6 +10,8 @@ import { useOfflineIncidentQueue } from '@/hooks/useOfflineIncidentQueue';
 import {
   isIncidentType,
   submitIncident,
+  listIncidents,
+  type Incident,
   type IncidentClientLike,
   type IncidentType,
 } from '@/integrations/supabase/incidents';
@@ -76,6 +78,28 @@ export function CitizenReporting({ language, userId, client }: CitizenReportingP
   const { isOnline, status: connectionStatus } = useNetworkStatus();
   const { queueNewIncident, stats } = useOfflineIncidentQueue();
   const { toast } = useToast();
+  const [myReports, setMyReports] = useState<Incident[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+
+  const fetchMyReports = useCallback(async () => {
+    if (!userId) return;
+    setLoadingReports(true);
+    try {
+      const activeClient = client ?? (supabase as unknown as IncidentClientLike);
+      const res = await listIncidents({ client: activeClient });
+      if (res.ok) {
+        setMyReports(res.data);
+      }
+    } catch {
+      // Graceful offline fallback
+    } finally {
+      setLoadingReports(false);
+    }
+  }, [userId, client]);
+
+  useEffect(() => {
+    fetchMyReports();
+  }, [fetchMyReports]);
 
 const typeLabels: Record<string, string> = {
     flooding: rl.flooding, high_waves: rl.highWaves, blocked_roads: rl.blockedRoads, other: rl.other,
@@ -160,8 +184,9 @@ const activeClient = client ?? (supabase as unknown as IncidentClientLike);
           setPhoto(null);
         }, 2000);
       }
-    } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      toast({ variant: 'destructive', title: 'Error', description: message });
     } finally {
       setSubmitting(false);
     }
@@ -296,6 +321,71 @@ const activeClient = client ?? (supabase as unknown as IncidentClientLike);
                 </motion.div>
               )}
             </AnimatePresence>
+          </div>
+        )}
+        {/* Citizen's Own Submitted Reports & Lifecycle Tracking */}
+        {userId && myReports.length > 0 && (
+          <div className="mt-8 border-t border-border pt-6" data-testid="citizen-my-reports">
+            <h3 className="text-lg font-bold text-foreground mb-1 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              Your Reported Hazards ({myReports.length})
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Track the verification and dispatch lifecycle of hazards you reported.
+            </p>
+            <div className="space-y-3">
+              {myReports.map((report) => {
+                const status = report.status ?? 'unverified';
+                const typeName = report.type ? typeLabels[report.type] : report.rawType || 'Hazard';
+                return (
+                  <div
+                    key={report.id}
+                    className="p-4 rounded-xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    data-testid="citizen-report-item"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-foreground">{typeName}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          Ref: #{report.id.slice(0, 8)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {report.description || 'No description provided'}
+                      </p>
+                      {report.createdAt && (
+                        <p className="text-[11px] text-muted-foreground/80">
+                          Reported: {new Date(report.createdAt).toLocaleString()}
+                        </p>
+                      )}
+                      {report.rejectionReason && (
+                        <p className="text-xs text-destructive mt-1">
+                          Notice: {report.rejectionReason}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <span
+                        className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border ${
+                          status === 'verified'
+                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                            : status === 'dispatched'
+                            ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30'
+                            : status === 'resolved'
+                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                            : status === 'rejected'
+                            ? 'bg-destructive/10 text-destructive border-destructive/30'
+                            : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30'
+                        }`}
+                        data-testid={`citizen-report-status-${status}`}
+                      >
+                        {status === 'unverified' ? 'PENDING REVIEW' : status.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </motion.div>

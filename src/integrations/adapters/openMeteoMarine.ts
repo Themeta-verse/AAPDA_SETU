@@ -13,6 +13,7 @@ import type {
   NormalizedMarine,
   SourceError,
   SourceMetadata,
+  WeatherHourlyPoint,
 } from './types';
 
 /**
@@ -64,6 +65,7 @@ export const FORECAST_HOURLY_FIELDS =
 export const FORECAST_REQUEST_DAYS = 3;
 
 export const SOURCE_TIMEZONE = 'Asia/Kolkata';
+export const TIMEZONE = SOURCE_TIMEZONE;
 
 export function buildMarineUrl({ latitude, longitude }: Coordinates): string {
   return (
@@ -94,6 +96,7 @@ export interface MarinePayload {
 /** Shape the forecast endpoint can normalise. Exported for tests. */
 export interface ForecastPayload {
   current?: unknown;
+  hourly?: unknown;
 }
 
 function emptyMetadata(url: string, id: SourceMetadata['id'], label: string): SourceMetadata {
@@ -272,6 +275,35 @@ export function normalizeForecastCurrent(payload: ForecastPayload): Pick<
   };
 }
 
+/** Normalise the forecast `hourly` block into aligned points. */
+export function normalizeForecastHourly(payload: ForecastPayload): WeatherHourlyPoint[] {
+  const hourly = isRecord(payload.hourly) ? payload.hourly : null;
+  if (!hourly) return [];
+
+  const times = Array.isArray(hourly.time) ? hourly.time : null;
+  if (!times) return [];
+
+  const rainProbs = Array.isArray(hourly.precipitation_probability) ? hourly.precipitation_probability : null;
+  const precipitations = Array.isArray(hourly.precipitation) ? hourly.precipitation : null;
+  const windSpeeds = Array.isArray(hourly.wind_speed_10m) ? hourly.wind_speed_10m : null;
+
+  const points: WeatherHourlyPoint[] = [];
+  const length = times.length;
+
+  for (let i = 0; i < length; i += 1) {
+    const time = validateTimestamp(times[i]);
+    if (!time) continue;
+
+    const rainProbability = rainProbs ? validateField(rainProbs[i], MARINE_RANGES.rainProbability) : null;
+    const precipitation = precipitations ? validateField(precipitations[i], MARINE_RANGES.precipitation) : null;
+    const windSpeed = windSpeeds ? validateField(windSpeeds[i], MARINE_RANGES.windSpeed) : null;
+
+    points.push({ time, rainProbability, precipitation, windSpeed });
+  }
+
+  return points;
+}
+
 /** Assemble the normalized payload from already-parsed bodies. */
 export function normalizeMarineSources(
   marineBody: MarinePayload,
@@ -295,6 +327,7 @@ export function normalizeMarineSources(
     seaSurfaceTemperature: sea.seaSurfaceTemperature,
     hourly: normalizeMarineHourly(marineBody),
     ...normalizeForecastCurrent(forecastBody),
+    hourlyWeather: normalizeForecastHourly(forecastBody),
     error,
   };
 }
@@ -322,6 +355,7 @@ export function emptyMarineReading(coordinates: Coordinates): NormalizedMarine {
     rainProbability: null,
     temperature: null,
     pressure: null,
+    hourlyWeather: [],
     error: null,
   };
 }

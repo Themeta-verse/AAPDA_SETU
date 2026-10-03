@@ -27,6 +27,7 @@ export const MARINE_RANGES = {
   windSpeed: { min: 0, max: 200 },
   windDirection: { min: 0, max: 360 },
   rainProbability: { min: 0, max: 100 },
+  precipitation: { min: 0, max: 500 },
   temperature: { min: -90, max: 70 },
   pressure: { min: 800, max: 1200 },
 } as const satisfies Record<string, NumberRange>;

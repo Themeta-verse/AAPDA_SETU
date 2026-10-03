@@ -57,8 +57,12 @@ let inFlightObjectUrl: string | null = null;
 let elevenLabsDisabledForSession = false;
 
 /** Non-secret configuration read from the same env vars as the rest of the app. */
+/** Non-secret configuration read from the same env vars as the rest of the app. */
 export function readSpeechConfig(): { supabaseUrl: string | null; supabaseKey: string | null } {
   const env = import.meta.env as Record<string, string | undefined>;
+  if (env.MODE === 'test') {
+    return { supabaseUrl: null, supabaseKey: null };
+  }
   return {
     supabaseUrl: env.VITE_SUPABASE_URL ?? null,
     supabaseKey: env.VITE_SUPABASE_PUBLISHABLE_KEY ?? null,
@@ -84,10 +88,13 @@ export function stopSpeech(): void {
 /** True when a backend is at least configured in this environment. */
 export function isSpeechAvailable(options: SpeechEngineOptions = {}): boolean {
   const synth =
-    options.speechSynthesis ??
-    (typeof window !== 'undefined' ? window.speechSynthesis : null);
+    options.speechSynthesis !== undefined
+      ? options.speechSynthesis
+      : typeof window !== 'undefined'
+      ? window.speechSynthesis ?? null
+      : null;
   const hasUtterance = typeof window !== 'undefined' && 'SpeechSynthesisUtterance' in window;
-  return hasUtterance && synth !== null;
+  return Boolean(hasUtterance && synth);
 }
 
 /**
@@ -111,10 +118,15 @@ export async function speak(
 
   if (!elevenLabsDisabledForSession) {
     const result = await speakViaElevenLabs(text, options);
-    if (result) return result;
+    if (result && result.kind === 'playing') return result;
     // The provider path failed in a way that will not fix itself on an
     // immediate retry; stop trying for the rest of the session.
     elevenLabsDisabledForSession = true;
+    // If browser speech is unavailable and the provider gave a failure result,
+    // surface the provider failure rather than "unavailable".
+    if (!isSpeechAvailable(options) && result) {
+      return result;
+    }
   }
 
   return speakViaBrowser(text, options);
@@ -217,8 +229,11 @@ function speakViaBrowser(
   options: SpeakOptions & SpeechEngineOptions
 ): SpeechResult {
   const synth =
-    options.speechSynthesis ??
-    (typeof window !== 'undefined' ? window.speechSynthesis : null);
+    options.speechSynthesis !== undefined
+      ? options.speechSynthesis
+      : typeof window !== 'undefined'
+      ? window.speechSynthesis ?? null
+      : null;
   const hasUtterance = typeof window !== 'undefined' && 'SpeechSynthesisUtterance' in window;
 
   if (!synth || !hasUtterance) {

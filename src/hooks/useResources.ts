@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useNetworkStatus } from './useNetworkStatus';
@@ -13,6 +13,12 @@ import {
   updateResourceAllocation as apiUpdateAllocation,
   deleteResource as apiDeleteResource,
   deleteResourceAllocation as apiDeleteAllocation,
+  checkSchemaAvailability,
+  clearSchemaAvailabilityCache,
+  isResourceSchemaUnavailable,
+  getResourceSchemaAvailability,
+  setResourceSchemaAvailability,
+  subscribeResourceSchemaAvailability,
   type Resource,
   type ResourceAllocation,
   type ResourceAuditLog,
@@ -43,19 +49,84 @@ export type {
 
 export { computeRuleBasedRecommendations };
 
-import type { User } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 export interface UseResourcesOptions {
-  client?: any;
+  client?: SupabaseClient;
   user?: User | null;
+  enabled?: boolean;
+}
+
+export function useResourceSchemaAvailability(options?: UseResourcesOptions) {
+  const { user: authUser } = useAuth();
+  const user = options?.user !== undefined ? options.user : authUser;
+  const { isOnline } = useNetworkStatus();
+  const client = options?.client ?? supabase;
+  const enabled = options?.enabled !== false && !!user;
+
+  const [schemaAvailable, setSchemaAvailable] = useState<boolean | null>(() => {
+    if (isResourceSchemaUnavailable()) return false;
+    return getResourceSchemaAvailability();
+  });
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    return subscribeResourceSchemaAvailability((status) => {
+      setSchemaAvailable(status);
+    });
+  }, []);
+
+  const probe = useCallback(
+    async (force: boolean = false): Promise<boolean> => {
+      if (!enabled) return false;
+      setChecking(true);
+      try {
+        const available = await checkSchemaAvailability(
+          {
+            client,
+            isOnline: () => isOnline,
+          },
+          force
+        );
+        setSchemaAvailable(available);
+        return available;
+      } finally {
+        setChecking(false);
+      }
+    },
+    [client, isOnline, enabled]
+  );
+
+  // Probe once on mount / status changes if availability not already known
+  useEffect(() => {
+    if (!enabled) {
+      setSchemaAvailable(null);
+      return;
+    }
+    const current = getResourceSchemaAvailability();
+    if (current !== null) {
+      setSchemaAvailable(current);
+      return;
+    }
+    probe(false);
+  }, [enabled, probe]);
+
+  const retry = useCallback(async (): Promise<boolean> => {
+    clearSchemaAvailabilityCache();
+    return await probe(true);
+  }, [probe]);
+
+  return { schemaAvailable, checking, retry };
 }
 
 export function useResources(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
   const userId = user?.id;
+  const enabled = options?.enabled !== false && !!user;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
+  const { schemaAvailable, checking, retry: retrySchema } = useResourceSchemaAvailability(options);
 
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,9 +135,23 @@ export function useResources(options?: UseResourcesOptions) {
   const [isCached, setIsCached] = useState(false);
 
   const fetchResources = useCallback(async () => {
-    if (!user) {
+    if (!enabled) {
       setResources([]);
       setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // If schema is unavailable, don't query and show empty state
+    if (schemaAvailable === false || isResourceSchemaUnavailable()) {
+      setResources([]);
+      setLoading(false);
+      setError('Resource management tables are not configured in the database.');
+      return;
+    }
+
+    // Only execute the query when schema availability is confirmed to be true
+    if (schemaAvailable !== true) {
       return;
     }
 
@@ -92,6 +177,13 @@ export function useResources(options?: UseResourcesOptions) {
         now: () => new Date(),
       });
 
+      if (result.error && result.error.kind === 'schema-unavailable') {
+        setResources([]);
+        setError('Resource management tables are not configured in the database.');
+        setLoading(false);
+        return;
+      }
+
       if (result.error) {
         // Fallback to cache if database error/offline
         const cached = loadFromCache<Resource[]>(CACHE_KEYS.RESOURCES);
@@ -115,7 +207,7 @@ export function useResources(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [userId, isOnline, client]);
+  }, [enabled, isOnline, client, schemaAvailable]);
 
   useEffect(() => {
     fetchResources();
@@ -123,12 +215,15 @@ export function useResources(options?: UseResourcesOptions) {
 
   return {
     resources,
-    loading,
+    loading: !enabled ? false : schemaAvailable === false ? false : (loading || checking),
     error,
     refetch: fetchResources,
     fetchedAt,
     isOnline,
     isCached,
+    schemaAvailable,
+    checking,
+    retrySchema,
   };
 }
 
@@ -136,8 +231,10 @@ export function useResourceAllocations(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
   const userId = user?.id;
+  const enabled = options?.enabled !== false && !!user;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
+  const { schemaAvailable, checking, retry: retrySchema } = useResourceSchemaAvailability(options);
 
   const [allocations, setAllocations] = useState<ResourceAllocation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,9 +242,22 @@ export function useResourceAllocations(options?: UseResourcesOptions) {
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
 
   const fetchAllocations = useCallback(async () => {
-    if (!user) {
+    if (!enabled) {
       setAllocations([]);
       setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // If schema is unavailable, don't query and show empty state
+    if (schemaAvailable === false || isResourceSchemaUnavailable()) {
+      setAllocations([]);
+      setLoading(false);
+      return;
+    }
+
+    // Only execute the query when schema availability is confirmed to be true
+    if (schemaAvailable !== true) {
       return;
     }
 
@@ -171,6 +281,12 @@ export function useResourceAllocations(options?: UseResourcesOptions) {
         now: () => new Date(),
       });
 
+      if (result.error && result.error.kind === 'schema-unavailable') {
+        setAllocations([]);
+        setLoading(false);
+        return;
+      }
+
       if (result.error) {
         const cached = loadFromCache<ResourceAllocation[]>(CACHE_KEYS.ALLOCATIONS);
         if (cached && Array.isArray(cached.data)) {
@@ -191,7 +307,7 @@ export function useResourceAllocations(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [userId, isOnline, client]);
+  }, [enabled, isOnline, client, schemaAvailable]);
 
   useEffect(() => {
     fetchAllocations();
@@ -199,11 +315,14 @@ export function useResourceAllocations(options?: UseResourcesOptions) {
 
   return {
     allocations,
-    loading,
+    loading: !enabled ? false : schemaAvailable === false ? false : (loading || checking),
     error,
     refetch: fetchAllocations,
     fetchedAt,
     isOnline,
+    schemaAvailable,
+    checking,
+    retrySchema,
   };
 }
 
@@ -211,17 +330,32 @@ export function useResourceAuditLogs(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
   const userId = user?.id;
+  const enabled = options?.enabled !== false && !!user;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
+  const { schemaAvailable, checking, retry: retrySchema } = useResourceSchemaAvailability(options);
 
   const [logs, setLogs] = useState<ResourceAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchLogs = useCallback(async () => {
-    if (!user) {
+    if (!enabled) {
       setLogs([]);
       setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // If schema is unavailable, don't query and show empty state
+    if (schemaAvailable === false || isResourceSchemaUnavailable()) {
+      setLogs([]);
+      setLoading(false);
+      return;
+    }
+
+    // Only execute the query when schema availability is confirmed to be true
+    if (schemaAvailable !== true) {
       return;
     }
 
@@ -234,6 +368,12 @@ export function useResourceAuditLogs(options?: UseResourcesOptions) {
         isOnline: () => isOnline,
       });
 
+      if (result.error && result.error.kind === 'schema-unavailable') {
+        setLogs([]);
+        setLoading(false);
+        return;
+      }
+
       if (result.error) {
         setError(result.error.message);
         setLogs([]);
@@ -245,7 +385,7 @@ export function useResourceAuditLogs(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [userId, isOnline, client]);
+  }, [enabled, isOnline, client, schemaAvailable]);
 
   useEffect(() => {
     fetchLogs();
@@ -253,9 +393,12 @@ export function useResourceAuditLogs(options?: UseResourcesOptions) {
 
   return {
     logs,
-    loading,
+    loading: !enabled ? false : schemaAvailable === false ? false : (loading || checking),
     error,
     refetch: fetchLogs,
+    schemaAvailable,
+    checking,
+    retrySchema,
   };
 }
 
@@ -263,17 +406,32 @@ export function useResourceCompatibility(options?: UseResourcesOptions) {
   const { user: authUser } = useAuth();
   const user = options?.user !== undefined ? options.user : authUser;
   const userId = user?.id;
+  const enabled = options?.enabled !== false && !!user;
   const { isOnline } = useNetworkStatus();
   const client = options?.client ?? supabase;
+  const { schemaAvailable, checking, retry: retrySchema } = useResourceSchemaAvailability(options);
 
   const [compatibilities, setCompatibilities] = useState<ResourceIncidentCompatibility[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchCompatibilities = useCallback(async () => {
-    if (!user) {
+    if (!enabled) {
       setCompatibilities([]);
       setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // If schema is unavailable, don't query and show empty state
+    if (schemaAvailable === false || isResourceSchemaUnavailable()) {
+      setCompatibilities([]);
+      setLoading(false);
+      return;
+    }
+
+    // Only execute the query when schema availability is confirmed to be true
+    if (schemaAvailable !== true) {
       return;
     }
 
@@ -286,6 +444,12 @@ export function useResourceCompatibility(options?: UseResourcesOptions) {
         isOnline: () => isOnline,
       });
 
+      if (result.error && result.error.kind === 'schema-unavailable') {
+        setCompatibilities([]);
+        setLoading(false);
+        return;
+      }
+
       if (result.error) {
         setError(result.error.message);
         setCompatibilities([]);
@@ -297,7 +461,7 @@ export function useResourceCompatibility(options?: UseResourcesOptions) {
     } finally {
       setLoading(false);
     }
-  }, [userId, isOnline, client]);
+  }, [enabled, isOnline, client, schemaAvailable]);
 
   useEffect(() => {
     fetchCompatibilities();
@@ -305,9 +469,12 @@ export function useResourceCompatibility(options?: UseResourcesOptions) {
 
   return {
     compatibilities,
-    loading,
+    loading: !enabled ? false : schemaAvailable === false ? false : (loading || checking),
     error,
     refetch: fetchCompatibilities,
+    schemaAvailable,
+    checking,
+    retrySchema,
   };
 }
 
@@ -324,6 +491,12 @@ export function useResourceMutations(options?: UseResourcesOptions) {
     async (input: Omit<CreateResourceInput, 'createdBy'>) => {
       if (!user) {
         setMutationError('Sign in required.');
+        return { ok: false, resourceId: null };
+      }
+
+      if (isResourceSchemaUnavailable()) {
+        const msg = 'Resource management tables are not configured in the database.';
+        setMutationError(msg);
         return { ok: false, resourceId: null };
       }
 
@@ -365,6 +538,12 @@ export function useResourceMutations(options?: UseResourcesOptions) {
         return { ok: false, allocationId: null };
       }
 
+      if (isResourceSchemaUnavailable()) {
+        const msg = 'Resource management tables are not configured in the database.';
+        setMutationError(msg);
+        return { ok: false, allocationId: null };
+      }
+
       if (!isOnline) {
         setMutationError('Action requires connection. Deployments cannot be made offline.');
         return { ok: false, allocationId: null };
@@ -400,6 +579,12 @@ export function useResourceMutations(options?: UseResourcesOptions) {
     async (input: UpdateAllocationInput) => {
       if (!user) {
         setMutationError('Sign in required.');
+        return { ok: false };
+      }
+
+      if (isResourceSchemaUnavailable()) {
+        const msg = 'Resource management tables are not configured in the database.';
+        setMutationError(msg);
         return { ok: false };
       }
 
@@ -441,6 +626,12 @@ export function useResourceMutations(options?: UseResourcesOptions) {
         return { ok: false };
       }
 
+      if (isResourceSchemaUnavailable()) {
+        const msg = 'Resource management tables are not configured in the database.';
+        setMutationError(msg);
+        return { ok: false };
+      }
+
       if (!isOnline) {
         setMutationError('Action requires connection. Resources cannot be deleted offline.');
         return { ok: false };
@@ -476,6 +667,12 @@ export function useResourceMutations(options?: UseResourcesOptions) {
     async (allocationId: string) => {
       if (!user) {
         setMutationError('Sign in required.');
+        return { ok: false };
+      }
+
+      if (isResourceSchemaUnavailable()) {
+        const msg = 'Resource management tables are not configured in the database.';
+        setMutationError(msg);
         return { ok: false };
       }
 

@@ -45,17 +45,17 @@ import {
   type SuggestedAllocation,
   computeRuleBasedRecommendations,
 } from '@/hooks/useResources';
-import { RESOURCE_TYPES, RESOURCE_STATUSES } from '@/integrations/supabase/resources';
+import { RESOURCE_TYPES, RESOURCE_STATUSES, clearSchemaAvailabilityCache } from '@/integrations/supabase/resources';
 import type { RiskZone } from '@/hooks/useSMSAlert';
 
-import type { User } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 interface ResourceCommandCenterProps {
   language: Language;
   user?: User | null;
   riskZones?: RiskZone[];
   currentRiskLevel?: 'safe' | 'moderate' | 'high' | 'critical';
-  client?: any;
+  client?: SupabaseClient;
 }
 
 const labels: Record<
@@ -415,6 +415,9 @@ export function ResourceCommandCenter({
     refetch: refetchResources,
     isCached,
     fetchedAt,
+    schemaAvailable: resourcesSchemaAvailable,
+    checking: resourcesChecking,
+    retrySchema: retryResourcesSchema,
   } = useResources({ client, user });
 
   const {
@@ -422,12 +425,19 @@ export function ResourceCommandCenter({
     loading: loadingAllocations,
     error: allocationsError,
     refetch: refetchAllocations,
+    schemaAvailable: allocationsSchemaAvailable,
+    checking: allocationsChecking,
+    retrySchema: retryAllocationsSchema,
   } = useResourceAllocations({ client, user });
 
   const {
     compatibilities,
     loading: loadingCompatibilities,
     error: compatibilityError,
+    refetch: refetchCompatibilities,
+    schemaAvailable: compatibilitiesSchemaAvailable,
+    checking: compatibilitiesChecking,
+    retrySchema: retryCompatibilitiesSchema,
   } = useResourceCompatibility({ client, user });
 
   const {
@@ -435,8 +445,18 @@ export function ResourceCommandCenter({
     loading: loadingAuditLogs,
     error: auditLogsError,
     refetch: refetchLogs,
+    schemaAvailable: auditLogsSchemaAvailable,
+    checking: auditLogsChecking,
+    retrySchema: retryAuditLogsSchema,
   } = useResourceAuditLogs({ client, user });
 
+  const schemaAvailable = resourcesSchemaAvailable ?? allocationsSchemaAvailable ?? compatibilitiesSchemaAvailable ?? auditLogsSchemaAvailable;
+  const checking = resourcesChecking || allocationsChecking || compatibilitiesChecking || auditLogsChecking;
+  const retrySchema = async (): Promise<boolean> => {
+    return (await retryResourcesSchema?.()) ?? false;
+  };
+
+  // Aggregate query errors from individual hooks (non-schema errors)
   const queryError = resourceError || allocationsError || compatibilityError || auditLogsError;
 
   const { incidents } = useIncidents(user, { client, enabled: !!user });
@@ -545,9 +565,16 @@ export function ResourceCommandCenter({
     });
   }, [resources, typeFilter, statusFilter, zoneFilter, searchQuery, zoneMap]);
 
-  // Refresh handler
+  // Refresh handler - retries schema availability check FIRST
   const handleRefresh = async () => {
-    await Promise.all([refetchResources(), refetchAllocations(), refetchLogs()]);
+    // Clear schema availability cache to force fresh check on retry
+    clearSchemaAvailabilityCache();
+    // Step 1: Probe schema availability FIRST with ONE minimal request
+    const isNowAvailable = typeof retrySchema === 'function' ? await retrySchema() : false;
+    // Step 2: ONLY if the table now exists, fetch resources/allocations/logs/compatibilities
+    if (isNowAvailable) {
+      await Promise.all([refetchResources(), refetchAllocations(), refetchLogs(), refetchCompatibilities()]);
+    }
   };
 
   // Allocation submission
@@ -767,7 +794,35 @@ export function ResourceCommandCenter({
       )}
 
       {/* Failure-isolated Resource Query Error Notice */}
-      {queryError && (
+      {schemaAvailable === false && (
+        <div
+          className="glass-card p-3.5 rounded-xl border border-warning/40 bg-warning/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
+          data-testid="resource-query-error-notice"
+        >
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-foreground">
+                Resource Management Not Configured
+              </p>
+              <p className="text-muted-foreground mt-0.5">
+                The resource management backend tables are not present in the current database. Resource inventory, allocations, and recommendations are unavailable. Incident reporting and flood intelligence remain fully operational.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={loadingResources || isSubmitting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/20 hover:bg-warning/30 text-warning font-semibold transition-colors flex-shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingResources ? 'animate-spin' : ''}`} />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
+      {/* Individual query errors (non-schema) */}
+      {schemaAvailable !== false && queryError && (
         <div
           className="glass-card p-3.5 rounded-xl border border-warning/40 bg-warning/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
           data-testid="resource-query-error-notice"

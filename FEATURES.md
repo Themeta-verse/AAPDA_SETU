@@ -44,6 +44,7 @@ PREDICT
 
 | Feature | Status | Notes |
 |---------|--------|-------|
+| Deterministic Forecast-Based Risk Assessment | **Implemented** | Model `deterministic-flood-v1`: pure deterministic rules answering WHERE, HOW severe, WHY, WHAT happens next, WHAT sources support this. Multi-horizon: NOW, +1H, +3H, +6H, +24H. Distinguishes INSUFFICIENT_DATA vs NOT_APPLICABLE. |
 | Heuristic risk engine (tide/wind/rain) | Implemented | Risk levels: safe/moderate/high/critical |
 | Tsunami risk detection | Implemented | Via USGS + heuristic thresholds |
 | Coastal flood prediction | Implemented | Rain probability + tide level based |
@@ -55,24 +56,25 @@ PREDICT
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| OpenStreetMap base layer | Implemented | EvacuationMap component |
-| Juhu Beach risk zone (hardcoded) | Implemented | Single risk center at Juhu Beach |
-| Dynamic risk zone polygons | Planned | Multi-zone support from official data |
-| Safe zone markers (JVPD, Mithibai, Cooper) | Implemented | Hardcoded in components |
+| Multi-layer spatial intelligence | **Implemented** | EvacuationMap supports Risk Zones, Verified Incidents, Resources, Safe Shelters, GPS Location layers. Shows explicit `GEOGRAPHIC RISK DATA UNAVAILABLE` when data is absent. |
+| Dynamic Urban Location Model | **Implemented** | City → Ward → Risk Zone structure replaces universal Juhu assumption. |
+| Safe zone markers | Implemented | Database / urban context driven with operational/standby status |
 | User location tracking | Implemented | useGeolocation hook with watchPosition |
 | Distance/risk status display | Implemented | LocationTracker component |
 | Evacuation direction calculation | Implemented | Bearing toward inland safe zones |
 | Offline map tiles | Later phase | Requires tile caching strategy |
 
-### D. Incident verification
+### D. Incident verification & operational lifecycle
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Citizen incident reporting | Implemented | CitizenReporting component + incident_reports table |
-| Photo upload with Supabase Storage | Implemented | incident-photos bucket with RLS |
-| Responder verification workflow | Planned | Requires responder role UI |
-| Community verification (upvotes) | Planned | Social verification layer |
-| AI-assisted verification | Later phase | Image analysis for flood detection |
+| Citizen report lifecycle tracking | **Implemented** | Citizen tracks reference ID and current status (Pending / Verified / Dispatched / Resolved) without operational controls |
+| Photo upload with Supabase Storage | Implemented | incident-photos bucket with RLS and signed URLs |
+| Responder verification workflow | **Implemented** | Queue, evidence inspection, verify/reject/resolve with notes and actor tracking |
+| Duplicate clustering | **Implemented** | Spatial (500m) + temporal (2h) clustering preserving all original reports |
+| Tactical demand classification | **Implemented** | Derived deterministically from verified incident types and evidence |
+| Incident operational audit trail | **Implemented** | `incident_audit_logs` tracking state transitions, actors, and notes |
 
 ### E. Evacuation and routing
 

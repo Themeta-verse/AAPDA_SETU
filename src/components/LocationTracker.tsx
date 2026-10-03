@@ -8,29 +8,12 @@ import {
 } from '@/hooks/useGeolocation';
 import { type RiskLevelOrUnknown } from '@/lib/monitoringData';
 
-/**
- * Where you are, relative to the monitored zone.
- *
- * WHAT THIS NO LONGER CLAIMS
- * --------------------------
- * The previous version derived a safety verdict from distance alone: under
- * 1 km rendered "EVACUATE NOW", under 3 km "Exercise caution", beyond that
- * "You are safe". Distance from a zone centre is not a safety determination,
- * and "you are safe" is not a conclusion this application is entitled to.
- * Those verdicts are removed. What remains is geography stated as geography:
- * your real position, your real fix accuracy, your real distance to the zone
- * target, and a real compass direction to a real configured safe location.
- *
- * The zone risk tier (passed in from the monitoring pipeline) is shown as
- * data, not derived here.
- */
-
 interface LocationTrackerProps {
   language: Language;
   riskLevel: RiskLevelOrUnknown;
   zoneName?: string;
-  targetLat?: number;
-  targetLon?: number;
+  targetLat?: number | null;
+  targetLon?: number | null;
   nearestSafeLocation?: {
     name: string;
     latitude: number;
@@ -78,12 +61,31 @@ const locationLabels: Record<Language, {
   },
 };
 
+function safeToFixed(value: number | null | undefined, decimals = 1): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return value.toFixed(decimals);
+}
+
+function safeDistanceClass(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'text-muted-foreground';
+  if (value < 1) return 'text-danger';
+  if (value < 3) return 'text-warning';
+  return 'text-safe';
+}
+
+function getDistanceStatus(ll: typeof locationLabels.en, value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < 1) return { text: ll.evacuateNow, color: 'text-danger', bg: 'bg-danger/10 border-danger/30' };
+  if (value < 3) return { text: ll.exerciseCaution, color: 'text-warning', bg: 'bg-warning/10 border-warning/30' };
+  return { text: ll.youAreSafe, color: 'text-safe', bg: 'bg-safe/10 border-safe/30' };
+}
+
 export function LocationTracker({
   language,
   riskLevel,
   zoneName,
-  targetLat = 19.0988,
-  targetLon = 72.8267,
+  targetLat,
+  targetLon,
   nearestSafeLocation,
 }: LocationTrackerProps) {
   const ll = locationLabels[language];
@@ -161,7 +163,7 @@ export function LocationTracker({
               <span className="text-xs text-muted-foreground">{ll.yourLocation}</span>
             </div>
             <p className="text-sm font-mono font-bold" data-testid="tracker-coords">
-              {geo.formatted ?? '—'}
+              {geo.formatted ?? (geo.position ? `${safeToFixed(geo.position.latitude, 4)}°N, ${safeToFixed(geo.position.longitude, 4)}°E` : '—')}
             </p>
             {geo.accuracyLabel && (
               <p className="text-[10px] text-muted-foreground mt-1">
@@ -179,7 +181,7 @@ export function LocationTracker({
               <Compass className="w-4 h-4 text-warning" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">{ll.distance}</span>
             </div>
-            <p className="text-2xl font-bold font-mono" data-testid="tracker-distance">
+            <p className={`text-2xl font-bold font-mono ${safeDistanceClass(distanceToTargetKm)}`} data-testid="tracker-distance">
               {distanceToTargetKm !== null ? `${distanceToTargetKm.toFixed(1)} km` : '—'}
             </p>
             {zoneName && <p className="text-[10px] text-muted-foreground mt-1">Target: {zoneName}</p>}
@@ -193,10 +195,14 @@ export function LocationTracker({
             </div>
             <p className="text-sm font-bold">{safeZoneDirection ?? '—'}</p>
             {nearestSafeLocation ? (
-              <p className="text-[10px] text-muted-foreground mt-1">
-                {nearestSafeLocation.name}
-                {safeZoneDistanceKm !== null ? ` · ${safeZoneDistanceKm.toFixed(1)} km` : ''}
-              </p>
+              <>
+                <p className="text-xs font-medium text-foreground">{nearestSafeLocation.name}</p>
+                <p className="text-[10px] text-safe font-semibold mt-1">
+                  {safeZoneDistanceKm !== null && Number.isFinite(safeZoneDistanceKm)
+                    ? `${safeZoneDistanceKm.toFixed(1)} km away`
+                    : 'Configured assembly point'}
+                </p>
+              </>
             ) : (
               <p className="text-[10px] text-muted-foreground mt-1">{ll.noSafeZone}</p>
             )}
