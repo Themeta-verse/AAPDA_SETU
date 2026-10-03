@@ -84,7 +84,7 @@ function generateSmsMessage(
   const eventLabel = eventLabels[eventType] || eventType;
   const severityLabel = severity.toUpperCase();
 
-  let message = `🚨 BAYWATCH ${severityLabel} ALERT: ${eventLabel}\n`;
+  let message = `🚨 AAPDA SETU ${severityLabel} ALERT: ${eventLabel}\n`;
   message += `Time: ${timestamp} IST\n`;
   message += `Location: Near Juhu Beach, Mumbai (${userLocation.latitude.toFixed(4)}°N, ${userLocation.longitude.toFixed(4)}°E)\n`;
 
@@ -119,7 +119,7 @@ function generateSmsMessage(
 
   message += `\n\n🛡 Nearest Safe Zone: ${nearestSafeZone}\n`;
   message += `📞 Emergency: 112 (Disaster) | 108 (Ambulance) | 100 (Police)\n`;
-  message += `BayWatch Auto-Alert`;
+  message += `AAPDA SETU Auto-Alert`;
 
   return message;
 }

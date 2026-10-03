@@ -112,6 +112,6 @@ describe('multilingual voice scripts carry the same facts', () => {
       officialWarnings: [],
       retrievedAt: '2026-09-30T11:59:00.000Z',
     });
-    expect(script.text).toContain('BayWatch coastal alert.');
+    expect(script.text).toContain('AAPDA SETU coastal alert.');
   });
 });

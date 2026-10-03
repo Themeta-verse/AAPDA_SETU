@@ -473,7 +473,7 @@ describe('browser notification permission', () => {
       eventKey: 'A',
       rule: 'RISK_ESCALATED',
       severity: 'critical',
-      title: 'BayWatch alert',
+      title: 'AAPDA SETU alert',
       detail: 'detail',
       createdAt: '2026-09-30T12:00:00Z',
       acknowledgedAt: null,

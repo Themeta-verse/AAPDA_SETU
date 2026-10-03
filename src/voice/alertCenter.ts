@@ -94,7 +94,7 @@ interface VoiceStrings {
 
 const VOICE_STRINGS: Record<Language, VoiceStrings> = {
   en: {
-    header: 'BayWatch coastal alert.',
+    header: 'AAPDA SETU coastal alert.',
     riskUnknown: 'Coastal risk state is unknown because required data is unavailable.',
     riskIs: (state) => `Coastal risk state is ${state}.`,
     waveIs: (wave) => `Significant wave height is ${wave}.`,
@@ -126,7 +126,7 @@ const VOICE_STRINGS: Record<Language, VoiceStrings> = {
     retrievedAt: (when) => `Data retrieved at ${when} IST.`,
   },
   hi: {
-    header: 'बेवॉच तटीय चेतावनी।',
+    header: 'आपदा सेतु तटीय चेतावनी।',
     riskUnknown: 'आवश्यक डेटा उपलब्ध नहीं है, इसलिए तटीय जोखिम स्थिति अज्ञात है।',
     riskIs: (state) => `तटीय जोखिम स्थिति ${state} है।`,
     waveIs: (wave) => `महत्वपूर्ण लहर ऊंचाई ${wave} है।`,
@@ -158,7 +158,7 @@ const VOICE_STRINGS: Record<Language, VoiceStrings> = {
     retrievedAt: (when) => `डेटा ${when} IST पर प्राप्त किया गया।`,
   },
   mr: {
-    header: 'बेवॉच किनारपट्टी इशारा।',
+    header: 'आपदा सेतु किनारपट्टी इशारा।',
     riskUnknown: 'आवश्यक डेटा उपलब्ध नाही, म्हणून किनारपट्टी जोखीम स्थिती अज्ञात आहे।',
     riskIs: (state) => `किनारपट्टी जोखीम स्थिती ${state} आहे।`,
     waveIs: (wave) => `महत्त्वाची लाट उंची ${wave} आहे।`,
@@ -190,7 +190,7 @@ const VOICE_STRINGS: Record<Language, VoiceStrings> = {
     retrievedAt: (when) => `डेटा ${when} IST रोजी प्राप्त झाला।`,
   },
   gu: {
-    header: 'બેવોચ દરિયાકાંઠા ચેતવણી।',
+    header: 'આપદા સેતુ દરિયાકાંઠા ચેતવણી।',
     riskUnknown: 'જરૂરી ડેટા ઉપલબ્ધ નથી, તેથી દરિયાકાંઠાનું જોખમ અજ્ઞાત છે।',
     riskIs: (state) => `દરિયાકાંઠાનું જોખમ ${state} છે।`,
     waveIs: (wave) => `નોંધપાત્ર મોજાની ઊંચાઈ ${wave} છે।`,

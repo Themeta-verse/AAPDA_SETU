@@ -216,10 +216,10 @@ describe('Login Page - Production Auth & Demolition of Demo Credentials', () => 
     expect(screen.queryByPlaceholderText('Enter your name')).toBeNull();
   });
 
-  it('preserves emergency 112 / 108 helpline notice and BayWatch branding', () => {
+  it('preserves emergency 112 / 108 helpline notice and AAPDA SETU branding', () => {
     render(<Login />);
 
-    expect(screen.getByText(/BAYWATCH/i)).toBeDefined();
+    expect(screen.getByText(/AAPDA SETU/i)).toBeDefined();
     expect(screen.getByText(/Urban Disaster Intelligence & Response/i)).toBeDefined();
     expect(screen.getByText(/112/)).toBeDefined();
     expect(screen.getByText(/108/)).toBeDefined();

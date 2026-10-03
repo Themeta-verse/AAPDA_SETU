@@ -26,7 +26,8 @@ export function HeroSection({
 }: HeroSectionProps) {
   const t = translations[language];
   const displayLocation = locationName || t.juhuBeach;
-  const hasData = statusHasMeasurements(sourceStatus);
+  const effectiveSourceStatus = sourceStatus || 'unavailable';
+  const hasData = statusHasMeasurements(effectiveSourceStatus);
   const riskKey = riskLevel === 'critical' ? 'critical' : riskLevel === 'high' ? 'high' : riskLevel === 'moderate' ? 'moderate' : 'safe';
   const riskLabel = hasData ? t[riskKey] : 'NO DATA';
 
@@ -89,19 +90,19 @@ export function HeroSection({
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${statusBorder} bg-card/60 backdrop-blur-sm`}>
               <div className={`w-2.5 h-2.5 rounded-full ${statusColor} ${hasData ? 'animate-pulse' : ''}`} />
               <span className="text-xs font-bold uppercase tracking-wider text-foreground">
-                {sourceStatus.toUpperCase()}
+                {effectiveSourceStatus.toUpperCase()}
               </span>
             </div>
-            {sourceStatus === 'live' && (
+            {effectiveSourceStatus === 'live' && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5 backdrop-blur-sm">
                 <Radar className="w-3.5 h-3.5 text-primary animate-spin" style={{ animationDuration: '4s' }} />
                 <span className="text-xs font-mono text-primary font-semibold">{t.liveMonitoring}</span>
               </div>
             )}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card/60 backdrop-blur-sm">
-              <Signal className={`w-3.5 h-3.5 ${sourceStatus === 'live' ? 'text-safe' : 'text-muted-foreground'}`} />
+              <Signal className={`w-3.5 h-3.5 ${effectiveSourceStatus === 'live' ? 'text-safe' : 'text-muted-foreground'}`} />
               <span className="text-xs text-muted-foreground font-medium">
-                {t.monitoringMode}: {sourceStatus.toUpperCase()}
+                {t.monitoringMode}: {effectiveSourceStatus.toUpperCase()}
               </span>
             </div>
             {isSimulation && (

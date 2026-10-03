@@ -163,7 +163,7 @@ export function evaluateNotificationRules(
           rule: 'RISK_ESCALATED',
           discriminator: `${input.previousRiskState}->${input.riskState}`,
         }),
-        source: 'BayWatch risk engine',
+        source: 'AAPDA SETU risk engine',
         riskState: input.riskState,
       });
     }
@@ -191,7 +191,7 @@ export function evaluateNotificationRules(
       title: 'Tsunami flag present',
       detail:
         'A regional earthquake carries a tsunami flag from an official source. This is a ' +
-        'reported flag, not a BayWatch prediction.',
+        'reported flag, not an AAPDA SETU prediction.',
       eventKey: buildEventKey({ rule: 'TSUNAMA_FLAG_SET', discriminator: 'regional' }),
       source: 'USGS / INCOIS',
       riskState: input.riskState,

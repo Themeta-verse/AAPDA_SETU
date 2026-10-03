@@ -14,7 +14,7 @@ export function SupabaseConfigNotice() {
               Supabase Configuration Required
             </h1>
             <p className="text-sm text-slate-400">
-              AAPDA SETU / BayWatch frontend deployment check
+              AAPDA SETU frontend deployment check
             </p>
           </div>
         </div>

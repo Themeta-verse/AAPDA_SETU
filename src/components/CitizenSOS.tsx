@@ -166,7 +166,7 @@ export function CitizenSOS({
 
       toast({
         title: '🚨 Emergency SOS Dispatched',
-        description: `Signal transmitted to Incident Command. Ref: #BW-${res.incidentId.slice(0, 8).toUpperCase()}`,
+        description: `Signal transmitted to Incident Command. Ref: #AS-${(res.incidentId || '').slice(0, 8).toUpperCase()}`,
       });
 
       if (onSosSubmitted) {
@@ -265,7 +265,7 @@ export function CitizenSOS({
             <p>
               Beacon Reference:{' '}
               <strong className="text-foreground text-sm">
-                #BW-{submittedId.slice(0, 8).toUpperCase()}
+                #AS-{(submittedId || '').slice(0, 8).toUpperCase()}
               </strong>
             </p>
             <p>Category: <strong className="text-foreground uppercase">{selectedType}</strong></p>

@@ -54,7 +54,7 @@ interface ResourceCommandCenterProps {
   language: Language;
   user?: User | null;
   riskZones?: RiskZone[];
-  currentRiskLevel?: 'safe' | 'moderate' | 'high' | 'critical';
+  currentRiskLevel?: 'safe' | 'moderate' | 'high' | 'critical' | null;
   client?: SupabaseClient;
 }
 
@@ -401,6 +401,7 @@ export function ResourceCommandCenter({
   currentRiskLevel = 'safe',
   client,
 }: ResourceCommandCenterProps) {
+  const effectiveRiskLevel = currentRiskLevel || 'safe';
   const t = labels[language] || labels.en;
   const { user: authUser } = useAuth();
   const user = userProp !== undefined ? userProp : authUser;
@@ -917,7 +918,7 @@ export function ResourceCommandCenter({
             <h3 className="text-sm font-semibold text-foreground">{t.activeDemand}</h3>
           </div>
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary font-mono text-muted-foreground">
-            Current Risk: {currentRiskLevel.toUpperCase()}
+            Current Risk: {effectiveRiskLevel.toUpperCase()}
           </span>
         </div>
 

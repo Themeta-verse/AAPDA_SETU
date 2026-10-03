@@ -96,7 +96,7 @@ describe('Final Feature Pass: Citizen SOS → Incident Command → Resource Disp
       expect(String(insertedRecord?.description)).toContain('[URGENT SOS: TRAPPED]');
       expect(String(insertedRecord?.description)).toContain('Water rising up to 2nd floor balcony');
       expect(insertedRecord?.user_id).toBe('citizen-user-1');
-      expect(screen.getByText(/#BW-SOS-1234/i)).toBeInTheDocument();
+      expect(screen.getByText(/#AS-SOS-1234/i)).toBeInTheDocument();
     });
 
     it('displays location unavailable honestly when GPS is not active without fake coordinates', () => {
@@ -200,7 +200,7 @@ describe('Final Feature Pass: Citizen SOS → Incident Command → Resource Disp
       );
 
       // Verify Incident ID is rendered
-      expect(await screen.findByText(/#BW-22222222/i)).toBeInTheDocument();
+      expect(await screen.findByText(/#AS-22222222/i)).toBeInTheDocument();
       // Verify SOS badge is rendered
       expect(screen.getAllByText(/URGENT SOS: FLOOD/i).length).toBeGreaterThan(0);
 

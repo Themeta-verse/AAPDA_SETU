@@ -69,16 +69,24 @@ export function useResourceSchemaAvailability(options?: UseResourcesOptions) {
     return getResourceSchemaAvailability();
   });
   const [checking, setChecking] = useState(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    return subscribeResourceSchemaAvailability((status) => {
-      setSchemaAvailable(status);
+    isMountedRef.current = true;
+    const unsub = subscribeResourceSchemaAvailability((status) => {
+      if (isMountedRef.current) {
+        setSchemaAvailable(status);
+      }
     });
+    return () => {
+      isMountedRef.current = false;
+      unsub();
+    };
   }, []);
 
   const probe = useCallback(
     async (force: boolean = false): Promise<boolean> => {
-      if (!enabled) return false;
+      if (!enabled || !isMountedRef.current) return false;
       setChecking(true);
       try {
         const available = await checkSchemaAvailability(
@@ -88,10 +96,14 @@ export function useResourceSchemaAvailability(options?: UseResourcesOptions) {
           },
           force
         );
-        setSchemaAvailable(available);
+        if (isMountedRef.current) {
+          setSchemaAvailable(available);
+        }
         return available;
       } finally {
-        setChecking(false);
+        if (isMountedRef.current) {
+          setChecking(false);
+        }
       }
     },
     [client, isOnline, enabled]

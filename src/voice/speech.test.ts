@@ -61,7 +61,7 @@ describe('speakVoiceScript reports to the event stream', () => {
     const { seen, unsub } = collectEvents();
     const opts: SpeechEngineOptions = { speechSynthesis: synth };
 
-    const result = await speakVoiceScript('BayWatch coastal alert. Test.', {
+    const result = await speakVoiceScript('AAPDA SETU coastal alert. Test.', {
       ...opts,
       language: 'hi',
     });
@@ -100,7 +100,7 @@ describe('speakVoiceScript reports to the event stream', () => {
   it('speakVoiceScript files voice-failed when nothing can play', async () => {
     const { seen, unsub } = collectEvents();
 
-    const result = await speakVoiceScript('BayWatch coastal alert. Test.', {
+    const result = await speakVoiceScript('AAPDA SETU coastal alert. Test.', {
       // No provider config and no browser engine: genuinely unavailable.
       speechSynthesis: null,
     });

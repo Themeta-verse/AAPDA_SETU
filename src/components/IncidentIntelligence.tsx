@@ -919,7 +919,7 @@ function IncidentCard({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs text-muted-foreground uppercase font-semibold">
-                #BW-{incident.id.slice(0, 8).toUpperCase()}
+                #AS-{(incident.id || '').slice(0, 8).toUpperCase()}
               </span>
 
               {incident.isSos && (
@@ -1189,7 +1189,7 @@ function IncidentCard({
                                     : 'bg-secondary text-muted-foreground border-border'
                                 }`}
                               >
-                                {isDeployed ? 'DISPATCHED / EN ROUTE' : isCompleted ? 'ARRIVED / ON SCENE' : alloc.status.toUpperCase()}
+                                {isDeployed ? 'DISPATCHED / EN ROUTE' : isCompleted ? 'ARRIVED / ON SCENE' : (alloc.status || 'pending').toUpperCase()}
                               </span>
                             </div>
 
@@ -1335,7 +1335,7 @@ function IncidentCard({
                   data-testid={`audit-log-drawer-${incident.id}`}
                 >
                   <div className="flex items-center justify-between pb-1.5 border-b border-border/40 font-mono text-[11px] text-muted-foreground">
-                    <span>Case Reference: #BW-{incident.id.slice(0, 8).toUpperCase()}</span>
+                    <span>Case Reference: #AS-{(incident.id || '').slice(0, 8).toUpperCase()}</span>
                     <span>Authoritative Log</span>
                   </div>
 

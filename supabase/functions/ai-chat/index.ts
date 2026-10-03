@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `You are BayWatch AI Assistant, an emergency guidance chatbot for Juhu Beach, Mumbai.
+const SYSTEM_PROMPT = `You are AAPDA SETU AI Assistant, an emergency guidance chatbot for Juhu Beach, Mumbai.
 
 You help users with:
 - Beach safety conditions and real-time risk assessment

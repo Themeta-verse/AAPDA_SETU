@@ -45,7 +45,7 @@ export function evacuationGuidanceFor(
     assessment.tsunamiStatus === true && assessment.tsunamiAuthoritative === true;
   const triggers: string[] = [];
   if (assessment.state === 'severe' || assessment.state === 'high') {
-    triggers.push(`BayWatch risk state is ${assessment.state}`);
+    triggers.push(`AAPDA SETU risk state is ${assessment.state}`);
   }
   if (warningActive) triggers.push('an official IMD/INCOIS warning is active');
   if (tsunami) triggers.push('an authoritative tsunami flag is present');
@@ -65,8 +65,8 @@ export function evacuationGuidanceFor(
     return {
       mode: 'prepare',
       title: 'Be prepared to move',
-      detail: `BayWatch risk state is ${assessment.state}. No evacuation is indicated, but identify a destination while conditions are calm.`,
-      triggers: [`BayWatch risk state is ${assessment.state}`],
+      detail: `AAPDA SETU risk state is ${assessment.state}. No evacuation is indicated, but identify a destination while conditions are calm.`,
+      triggers: [`AAPDA SETU risk state is ${assessment.state}`],
     };
   }
 

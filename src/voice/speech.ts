@@ -297,7 +297,7 @@ export async function speakVoiceScript(
       kind: 'voice-generated',
       at,
       summary: `Voice alert played via ${result.backend === 'elevenlabs' ? 'ElevenLabs' : 'browser speech'} (${options.language ?? 'en'})`,
-      source: 'BayWatch voice',
+      source: 'AAPDA SETU voice',
       data: { backend: result.backend, language: options.language ?? 'en' },
     });
   } else {
@@ -308,7 +308,7 @@ export async function speakVoiceScript(
         result.kind === 'failed'
           ? `Voice alert failed: ${result.message}`
           : 'Voice alert unavailable: no speech backend in this environment',
-      source: 'BayWatch voice',
+      source: 'AAPDA SETU voice',
       data: {
         language: options.language ?? 'en',
         reason: result.kind === 'failed' ? result.message : result.reason,

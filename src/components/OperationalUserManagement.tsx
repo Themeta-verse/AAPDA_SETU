@@ -275,8 +275,8 @@ export function OperationalUserManagement({ language: _language, user }: Operati
   // Filtered users
   const filteredUsers = users.filter((u) => {
     const matchesSearch =
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.name.toLowerCase().includes(searchQuery.toLowerCase());
+      (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (u.name || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     return matchesSearch && matchesRole;
   });
@@ -661,7 +661,7 @@ export function OperationalUserManagement({ language: _language, user }: Operati
                                 : 'bg-muted text-muted-foreground'
                             }`}
                           >
-                            {u.name ? u.name.charAt(0).toUpperCase() : u.email.charAt(0).toUpperCase()}
+                            {((u.name || u.email || '?').charAt(0)).toUpperCase()}
                           </div>
                           <div>
                             <div className="font-semibold text-foreground flex items-center gap-1.5">

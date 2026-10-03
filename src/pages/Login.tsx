@@ -24,7 +24,7 @@ export default function Login() {
     try {
       if (isSignUp) {
         await signUp(email, password, name, phone || undefined);
-        toast({ title: '✅ Account created!', description: 'Welcome to BayWatch.' });
+        toast({ title: '✅ Account created!', description: 'Welcome to AAPDA SETU.' });
       } else {
         await signIn(email, password);
         toast({ title: '✅ Welcome back!', description: 'Logged in successfully.' });
@@ -62,7 +62,7 @@ export default function Login() {
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-3 mb-3">
             <Shield className="w-10 h-10 text-primary" />
-            <h1 className="text-4xl font-black tracking-tight text-foreground">BAYWATCH</h1>
+            <h1 className="text-4xl font-black tracking-tight text-foreground">AAPDA SETU</h1>
           </div>
           <p className="text-primary font-semibold">Urban Disaster Intelligence & Response</p>
           <p className="text-muted-foreground text-sm mt-1">

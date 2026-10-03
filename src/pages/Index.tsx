@@ -78,7 +78,7 @@ const IndexContent = () => {
 
   // Development-only diagnostic trace (as requested in Step 1)
   if (import.meta.env.DEV && user) {
-    console.log('[BayWatch Role/Workspace Routing Diagnostic]', {
+    console.log('[AAPDA SETU Role/Workspace Routing Diagnostic]', {
       email: user.email,
       app_metadata: user.app_metadata,
       app_metadata_role: user.app_metadata?.role,
@@ -246,7 +246,7 @@ const IndexContent = () => {
       {/* Top bar */}
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-lg border-b border-border" role="banner">
         <div className="container flex items-center justify-between h-14">
-          <span className="font-bold text-primary text-sm tracking-wide">🌊 BAYWATCH</span>
+          <span className="font-bold text-primary text-sm tracking-wide">🛡️ AAPDA SETU</span>
           <div className="flex items-center gap-2">
 {/* Live data indicator */}
             {marine.status === 'live' && (
@@ -500,7 +500,7 @@ const IndexContent = () => {
               <span className="text-[11px] text-muted-foreground uppercase font-medium">Network Link</span>
               <p className="text-xs font-bold text-foreground mt-1 flex items-center gap-1">
                 <span className={`w-2 h-2 rounded-full ${connectionStatus === 'online' ? 'bg-safe' : 'bg-warning'}`} />
-                {connectionStatus.toUpperCase()}
+                {(connectionStatus || 'offline').toUpperCase()}
               </p>
             </div>
             <div className="p-3.5 rounded-xl border border-border bg-card/60">
@@ -516,7 +516,7 @@ const IndexContent = () => {
             language={language}
             user={user}
             riskZones={riskZones}
-            currentRiskLevel={activeData.riskLevel}
+            currentRiskLevel={activeData.riskLevel || 'safe'}
           />
 
           {/* Administrator-Only: Operational User & Role Management */}
@@ -653,7 +653,7 @@ const IndexContent = () => {
 
       {/* Footer */}
       <footer className="container py-8 text-center text-xs text-muted-foreground border-t border-border mt-2" role="contentinfo">
-        <p className="font-semibold text-foreground mb-1">BayWatch – Urban Disaster Intelligence & Response</p>
+        <p className="font-semibold text-foreground mb-1">AAPDA SETU – Urban Disaster Intelligence & Emergency Response</p>
         <p>Multilingual urban & coastal disaster alert platform © {new Date().getFullYear()}</p>
         <p className="mt-1">For educational and awareness purposes. Always follow official NDMA guidelines.</p>
         <p className="mt-2 text-[10px] text-muted-foreground/60">

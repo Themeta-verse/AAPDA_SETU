@@ -566,7 +566,7 @@ function RiskDrivers({ state }: { state: CoastalIntelligenceState }) {
                       : 'border-warning/50 text-warning'
                 }`}
               >
-                {dimension.state.toUpperCase()}
+                {(dimension.state || 'insufficient-data').toUpperCase()}
               </span>
             </div>
 
