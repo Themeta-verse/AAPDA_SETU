@@ -126,7 +126,7 @@ export function Chatbot({ language, monitoringData }: ChatbotProps) {
                   </span>
                   <div className="flex items-center gap-1">
                     <div className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" />
-                    <span className="text-[10px] text-muted-foreground">Online</span>
+                    <span className="text-[10px] text-muted-foreground">NVIDIA Nemotron 3 · Nebius Token Factory</span>
                   </div>
                 </div>
               </div>
