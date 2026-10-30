@@ -108,18 +108,19 @@ serve(async (req) => {
       return json({ error: "A messages array is required", requestId }, 400);
     }
 
-    const messages = body.messages
-      .filter((m: unknown) =>
+    const validMessages = (body.messages as unknown[]).filter(
+      (m): m is { role: "user" | "assistant"; content: string } =>
         !!m && typeof m === "object" &&
-        ((m as Record<string, unknown>).role === "user" || (m as Record<string, unknown>).role === "assistant") &&
+        (((m as Record<string, unknown>).role === "user") || ((m as Record<string, unknown>).role === "assistant")) &&
         typeof (m as Record<string, unknown>).content === "string"
-      )
+    );
+    const messages = validMessages
       .slice(-MAX_MESSAGES)
-      .map((m: Record<string, unknown>) => ({
-        role: m.role as "user" | "assistant",
-        content: (m.content as string).trim().slice(0, MAX_MESSAGE_CHARS),
+      .map((m) => ({
+        role: m.role,
+        content: m.content.trim().slice(0, MAX_MESSAGE_CHARS),
       }))
-      .filter((m: { content: string }) => m.content.length > 0);
+      .filter((m) => m.content.length > 0);
 
     if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
       return json({ error: "A non-empty user message is required", requestId }, 400);
