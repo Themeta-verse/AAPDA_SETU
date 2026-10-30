@@ -160,7 +160,7 @@ The project includes deterministic risk-engine tests, source-adapter tests, secu
 
 ## Hackathon development note
 
-AAPDA SETU was created during the Nebius x NVIDIA Global AI Hackathon submission period. The hackathon-specific engineering adds a production-style NVIDIA Nemotron inference path through Nebius Token Factory, server-side credential isolation, bounded and validated context, explicit model provenance, failure handling, and disaster-domain safety constraints. The base environmental, geospatial, incident, and response workflows remain independently implemented in the repository.
+AAPDA SETU was created during the Nebius x NVIDIA Global AI Hackathon submission period. The AAPDA SETU repository was created on 30 September 2026 and builds on the team's earlier BayWatch prototype. The hackathon-specific engineering adds an NVIDIA Nemotron inference path through Nebius Token Factory, server-side credential isolation, bounded and validated context, explicit model provenance, failure handling, and disaster-domain safety constraints. The base environmental, geospatial, incident, and response workflows remain independently implemented in the repository. See [the submission pack](docs/HACKATHON_SUBMISSION.md) for the prior-work disclosure and demo storyboard.
 
 ## License
 
